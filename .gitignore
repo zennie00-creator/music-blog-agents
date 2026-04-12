@@ -1,0 +1,5 @@
+blog_*.txt
+blog_*_naver.html
+__pycache__/
+*.pyc
+.DS_Store
