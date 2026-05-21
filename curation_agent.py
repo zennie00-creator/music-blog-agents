@@ -52,7 +52,7 @@ def chat_curation(mood, messages):
         api_messages = messages
 
     msg = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-opus-4-7",
         max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=api_messages
@@ -155,7 +155,7 @@ def get_album_versions(artist, track, genre):
 [/VERSIONS]"""
 
     msg = client.messages.create(
-        model="claude-opus-4-6", max_tokens=1024,
+        model="claude-opus-4-7", max_tokens=1024,
         messages=[{"role": "user", "content": prompt}]
     )
     response = msg.content[0].text
