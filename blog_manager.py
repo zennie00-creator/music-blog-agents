@@ -39,7 +39,7 @@ def write_blog_post(mood):
 700~900자 에세이 스타일로, 소제목 없이 자연스럽게 써주세요.
 마지막은 독자에게 지금 이 음악을 틀어보라는 권유로 마무리해주세요."""
     msg = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-opus-4-7",
         max_tokens=1500,
         messages=[{"role": "user", "content": prompt}]
     )
