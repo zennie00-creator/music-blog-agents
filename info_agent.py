@@ -10,6 +10,6 @@ def get_music_info(artist, album, track):
 3. 이 곡의 감성적·철학적 울림
 4. 이 음악을 들어야 하는 이유
 전문용어 없이 따뜻한 문체로 써주세요."""
-    msg = client.messages.create(model="claude-opus-4-7", max_tokens=1024,
+    msg = client.messages.create(model="claude-haiku-4-5", max_tokens=1024,
         messages=[{"role":"user","content":prompt}])
     return msg.content[0].text
