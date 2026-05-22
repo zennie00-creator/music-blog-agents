@@ -34,6 +34,6 @@ def get_audio_info(artist, album, track):
 2. 가장 잘 즐길 수 있는 환경 추천{' (위 사용자의 실제 오디오 환경을 기반으로 구체적으로)' if profile_str else ''}
 3. 집중해서 들으면 좋을 감상 포인트"""
 
-    msg = client.messages.create(model="claude-opus-4-7", max_tokens=768,
+    msg = client.messages.create(model="claude-haiku-4-5", max_tokens=768,
         messages=[{"role": "user", "content": prompt}])
     return msg.content[0].text
