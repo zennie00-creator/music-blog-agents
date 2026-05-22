@@ -31,6 +31,7 @@ st.markdown("""
         background: #fffef7; border: 1px solid #e9e3d0;
         border-radius: 12px; padding: 24px;
         line-height: 1.9; font-size: 15px; white-space: pre-wrap;
+        color: #212529;
     }
     .step-pill {
         display: inline-block; background: #007bff; color: white;
