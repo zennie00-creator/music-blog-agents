@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>미니멀 블로그 스타일</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #fafaf8; color: #1a1a1a; font-family: 'Georgia', serif; }
+
+  /* 상단 헤더 */
+  header {
+    border-bottom: 1px solid #e8e8e4; padding: 20px 0;
+    display: flex; justify-content: center;
+  }
+  .header-inner {
+    width: 720px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .site-name { font-size: 18px; font-weight: 400; letter-spacing: 3px; text-transform: uppercase; color: #1a1a1a; }
+  .nav-links { display: flex; gap: 28px; }
+  .nav-links a { font-size: 13px; color: #888; text-decoration: none; font-family: 'Segoe UI', sans-serif; letter-spacing: 1px; }
+  .nav-links a:hover { color: #1a1a1a; }
+
+  /* 메인 컨테이너 */
+  .container { max-width: 720px; margin: 0 auto; padding: 64px 0; }
+
+  /* 히어로 */
+  .hero { text-align: center; margin-bottom: 64px; }
+  .hero-eyebrow { font-size: 12px; letter-spacing: 3px; text-transform: uppercase; color: #aaa; font-family: 'Segoe UI', sans-serif; margin-bottom: 16px; }
+  .hero-title { font-size: 42px; font-weight: 400; line-height: 1.2; color: #1a1a1a; margin-bottom: 16px; }
+  .hero-sub { font-size: 16px; color: #888; font-family: 'Segoe UI', sans-serif; line-height: 1.6; }
+
+  /* 입력 영역 */
+  .input-area { margin-bottom: 64px; }
+  .input-label { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #aaa; font-family: 'Segoe UI', sans-serif; margin-bottom: 12px; display: block; }
+  .input-field {
+    width: 100%; border: none; border-bottom: 1px solid #ddd; background: transparent;
+    font-size: 20px; font-family: 'Georgia', serif; padding: 12px 0; outline: none; color: #1a1a1a;
+  }
+  .input-field::placeholder { color: #ccc; }
+  .input-field:focus { border-bottom-color: #1a1a1a; }
+  .start-btn {
+    margin-top: 24px; background: #1a1a1a; color: #fafaf8;
+    border: none; padding: 14px 32px; font-size: 13px; letter-spacing: 2px;
+    text-transform: uppercase; cursor: pointer; font-family: 'Segoe UI', sans-serif;
+  }
+  .start-btn:hover { background: #333; }
+
+  /* 구분선 */
+  .divider { border: none; border-top: 1px solid #e8e8e4; margin: 48px 0; }
+
+  /* 단계 표시 */
+  .steps { display: flex; gap: 0; margin-bottom: 48px; font-family: 'Segoe UI', sans-serif; }
+  .step-item { flex: 1; }
+  .step-num { font-size: 11px; color: #ccc; margin-bottom: 4px; letter-spacing: 1px; }
+  .step-name { font-size: 13px; color: #aaa; }
+  .step-item.done .step-num { color: #1a1a1a; }
+  .step-item.done .step-name { color: #1a1a1a; }
+  .step-item.active .step-name { color: #1a1a1a; font-weight: 600; border-bottom: 1px solid #1a1a1a; padding-bottom: 8px; }
+
+  /* 블로그 미리보기 */
+  .post-preview { }
+  .post-meta { font-size: 12px; letter-spacing: 2px; text-transform: uppercase; color: #aaa; font-family: 'Segoe UI', sans-serif; margin-bottom: 8px; }
+  .post-title { font-size: 32px; font-weight: 400; line-height: 1.3; margin-bottom: 8px; }
+  .post-artist { font-size: 14px; color: #888; font-family: 'Segoe UI', sans-serif; margin-bottom: 32px; }
+  .post-body { font-size: 17px; line-height: 1.9; color: #333; }
+  .post-body p { margin-bottom: 20px; }
+
+  /* 태그 */
+  .tags { display: flex; gap: 8px; margin-top: 32px; flex-wrap: wrap; }
+  .tag {
+    font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+    color: #888; border: 1px solid #ddd; padding: 4px 10px;
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  /* 이미지 플레이스홀더 */
+  .img-placeholder {
+    width: 100%; height: 200px; background: #f0efeb;
+    display: flex; align-items: center; justify-content: center;
+    color: #ccc; font-size: 13px; font-family: 'Segoe UI', sans-serif;
+    letter-spacing: 1px; margin-bottom: 32px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="site-name">Musiclog</div>
+    <nav class="nav-links">
+      <a href="#">Archive</a>
+      <a href="#">About</a>
+      <a href="#">New Post</a>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- 히어로 -->
+  <div class="hero">
+    <div class="hero-eyebrow">AI Music Blog</div>
+    <h1 class="hero-title">오늘 들은 음악을<br>글로 남기세요</h1>
+    <p class="hero-sub">분위기나 키워드를 입력하면 에이전트가 단계별로 블로그 글을 완성합니다</p>
+  </div>
+
+  <!-- 입력 -->
+  <div class="input-area">
+    <label class="input-label">오늘의 분위기</label>
+    <input class="input-field" placeholder="피곤한 일요일 오후, 빗소리가 들리는 카페...">
+    <br>
+    <button class="start-btn">시작하기</button>
+  </div>
+
+  <hr class="divider">
+
+  <!-- 단계 -->
+  <div class="steps">
+    <div class="step-item done">
+      <div class="step-num">01</div>
+      <div class="step-name">분위기 입력</div>
+    </div>
+    <div class="step-item done">
+      <div class="step-num">02</div>
+      <div class="step-name">음악 추천</div>
+    </div>
+    <div class="step-item active">
+      <div class="step-num">03</div>
+      <div class="step-name">글 작성</div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">04</div>
+      <div class="step-name">이미지</div>
+    </div>
+    <div class="step-item">
+      <div class="step-num">05</div>
+      <div class="step-name">완성</div>
+    </div>
+  </div>
+
+  <hr class="divider">
+
+  <!-- 블로그 미리보기 -->
+  <div class="post-preview">
+    <div class="post-meta">2026년 5월 25일 · Jazz · Soul</div>
+    <h2 class="post-title">빗소리와 함께 온<br>Norah Jones의 목소리</h2>
+    <div class="post-artist">Come Away With Me — Norah Jones, 2002</div>
+
+    <div class="img-placeholder">Generated Image</div>
+
+    <div class="post-body">
+      <p>창밖에 빗소리가 조용히 내리던 오후, 나는 오래된 플레이리스트를 열었다. Norah Jones의 목소리가 흘러나왔을 때, 방 안의 공기가 달라지는 것을 느꼈다.</p>
+      <p>어쿠스틱 기타의 나지막한 울림 위에 그녀의 목소리가 얹힌다. 서두르지 않고, 어디로도 가려 하지 않는 음악. 그냥 지금 이 자리에 있어도 괜찮다고 말하는 것 같은 느낌.</p>
+    </div>
+
+    <div class="tags">
+      <span class="tag">재즈</span>
+      <span class="tag">빗소리</span>
+      <span class="tag">오후</span>
+      <span class="tag">Norah Jones</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
