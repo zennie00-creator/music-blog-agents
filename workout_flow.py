@@ -26,11 +26,22 @@ def run():
         st.markdown('<div class="step-pill">🏃 1단계 — 오늘 운동 불러오기</div>',
                     unsafe_allow_html=True)
 
+        if st.session_state.get("wk_oauth_error"):
+            st.error(f"Whoop 인증 실패: {st.session_state.wk_oauth_error}")
+            st.session_state.wk_oauth_error = ""
+
         if whoop_agent.is_connected():
             st.success("✅ Whoop 계정 연결됨")
+        elif whoop_agent.has_credentials():
+            st.warning("Whoop 계정이 아직 연결되지 않았습니다.")
+            st.link_button("🔗 Whoop 계정 연결하기", whoop_agent.get_auth_url(),
+                           type="primary")
+            st.caption("버튼을 누르면 Whoop 로그인 화면으로 이동하고, 승인 후 이 앱으로 자동으로 돌아옵니다.")
+            st.divider()
+            st.caption("연결 없이 먼저 둘러보려면 아래 데모 데이터로 진행할 수 있습니다.")
         else:
             st.info("ℹ️ Whoop 미연결 상태 — 데모(샘플) 운동 데이터로 흐름을 보여드립니다. "
-                    "실제 연동은 WHOOP_CLIENT_ID / SECRET 환경변수를 설정한 뒤 가능합니다.")
+                    "실제 연동은 WHOOP_CLIENT_ID / SECRET 을 설정한 뒤 가능합니다.")
 
         st.write("")
         if not st.session_state.wk_workouts:

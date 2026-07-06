@@ -43,6 +43,12 @@ def _redirect_uri():
     return os.environ.get("WHOOP_REDIRECT_URI", "http://localhost:8501")
 
 
+def has_credentials():
+    """Whoop 개발자 앱 자격증명(Client ID/Secret)이 설정돼 있는지."""
+    return bool(os.environ.get("WHOOP_CLIENT_ID") and
+                os.environ.get("WHOOP_CLIENT_SECRET"))
+
+
 # ── OAuth ────────────────────────────────────────────────────────────
 def get_auth_url(state="whoopblog"):
     """사용자가 열어 로그인·동의할 Whoop 인증 URL."""

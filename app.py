@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import music_flow
 import workout_flow
+import whoop_agent
 from core import profile as profile_store
 
 # ── 페이지 설정 ──────────────────────────────────────────
@@ -67,6 +68,21 @@ DEFAULTS = {
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
+
+# ── Whoop OAuth 콜백 처리 ─────────────────────────────────
+# Whoop 로그인 후 앱으로 돌아오면 URL에 ?code=... 가 붙는다.
+# 이 code를 토큰으로 교환하고 운동 모드로 진입시킨다.
+_qp = st.query_params
+if "code" in _qp and not st.session_state.get("wk_oauth_done"):
+    try:
+        whoop_agent.exchange_code(_qp["code"])
+        st.session_state.wk_oauth_done = True
+        st.session_state.mode = "workout"
+        st.session_state.step = "w0"
+    except Exception as e:
+        st.session_state.wk_oauth_error = str(e)
+    st.query_params.clear()
+    st.rerun()
 
 # ── 사이드바: 모드별 프로필 설정 ─────────────────────────
 with st.sidebar:
