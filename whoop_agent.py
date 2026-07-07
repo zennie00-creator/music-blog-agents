@@ -28,7 +28,7 @@ TOKEN_PATH = os.path.join(os.path.dirname(__file__), ".whoop_token.json")
 
 SCOPES = "read:workout read:recovery read:profile offline"
 
-# Whoop sport_id → 한글 종목명 (자주 쓰는 일부만; 나머지는 '운동')
+# Whoop sport_id → 한글 종목명 (sport_name이 없을 때만 쓰는 예비 매핑)
 SPORT_NAMES = {
     -1: "운동", 0: "러닝", 1: "사이클링", 16: "야구", 17: "농구",
     18: "복싱", 22: "댄스", 27: "미식축구", 29: "골프", 30: "하키",
@@ -36,6 +36,21 @@ SPORT_NAMES = {
     44: "스쿼시", 45: "수영", 47: "테니스", 48: "육상", 52: "하이킹",
     62: "역도", 63: "웨이트 트레이닝", 66: "요가", 71: "스피닝",
     101: "걷기",
+}
+
+# Whoop sport_name(문자열) → 한글. 없으면 원문을 그대로 보여준다.
+SPORT_NAME_KO = {
+    "running": "러닝", "walking": "걷기", "cycling": "사이클링",
+    "swimming": "수영", "weightlifting": "웨이트 트레이닝",
+    "functional_fitness": "펑셔널 트레이닝", "hiit": "HIIT",
+    "yoga": "요가", "pilates": "필라테스", "hiking/rucking": "하이킹",
+    "hiking": "하이킹", "elliptical": "일립티컬", "rowing": "로잉",
+    "spin": "스피닝", "spinning": "스피닝", "tennis": "테니스",
+    "basketball": "농구", "soccer": "축구", "golf": "골프",
+    "boxing": "복싱", "dance": "댄스", "stairmaster": "스테어마스터",
+    "jump_rope": "줄넘기", "climbing": "클라이밍", "skiing": "스키",
+    "snowboarding": "스노보드", "pickleball": "피클볼",
+    "strength_trainer": "근력 운동", "meditation": "명상",
 }
 
 
@@ -143,10 +158,49 @@ def _get(path, token, params=None):
     return r.json()
 
 
+def _sport_name(w):
+    """Whoop이 주는 종목명을 우선 사용, 없으면 id 매핑, 그래도 없으면 '운동'."""
+    name = w.get("sport_name")
+    if name:
+        # "running" → "러닝" 처럼 알려진 건 한글로, 아니면 원문 그대로
+        key = name.strip().lower().replace(" ", "_")
+        return SPORT_NAME_KO.get(key, name.strip().title())
+    return SPORT_NAMES.get(w.get("sport_id"), "운동")
+
+
+def _zone_minutes(zone_duration):
+    """zone_duration(밀리초) → 존별 분. 없으면 빈 dict."""
+    if not zone_duration:
+        return {}
+    out = {}
+    for i, key in enumerate([
+        "zone_zero_milli", "zone_one_milli", "zone_two_milli",
+        "zone_three_milli", "zone_four_milli", "zone_five_milli",
+    ]):
+        ms = zone_duration.get(key)
+        if ms:
+            out[f"zone{i}"] = round(ms / 60000, 1)
+    return out
+
+
+def _local_time(iso_str, tz_offset):
+    """UTC ISO 문자열 + timezone_offset(예 '+09:00') → 'MM/DD HH:MM' 로컬시각."""
+    try:
+        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+        if tz_offset and len(tz_offset) >= 6:
+            sign = 1 if tz_offset[0] == "+" else -1
+            h, m = int(tz_offset[1:3]), int(tz_offset[4:6])
+            dt = dt + sign * timedelta(hours=h, minutes=m)
+        return dt.strftime("%m/%d %H:%M")
+    except Exception:
+        return iso_str or ""
+
+
 def _normalize_workout(w):
     score = w.get("score") or {}
     kj = score.get("kilojoule")
     kcal = round(kj / 4.184) if kj else None
+    tz = w.get("timezone_offset")
 
     duration_min = None
     try:
@@ -158,21 +212,28 @@ def _normalize_workout(w):
 
     dist = score.get("distance_meter")
     strain = score.get("strain")
+    alt = score.get("altitude_gain_meter")
     return {
-        "sport": SPORT_NAMES.get(w.get("sport_id"), "운동"),
+        "id": w.get("id"),
+        "sport": _sport_name(w),
         "start": w.get("start"),
         "end": w.get("end"),
+        "local_time": _local_time(w.get("start"), tz),
+        "scored": w.get("score_state") == "SCORED",
         "duration_min": duration_min,
         "strain": round(strain, 1) if strain is not None else None,
         "avg_hr": score.get("average_heart_rate"),
         "max_hr": score.get("max_heart_rate"),
         "kcal": kcal,
         "distance_m": round(dist) if dist else None,
+        "altitude_gain_m": round(alt) if alt else None,
+        "percent_recorded": score.get("percent_recorded"),
+        "zones": _zone_minutes(score.get("zone_duration")),
     }
 
 
-def get_recent_workouts(days=1, limit=5):
-    """최근 days일 이내의 운동 목록. 연결 안 됐으면 데모 데이터."""
+def get_recent_workouts(days=2, limit=25):
+    """최근 days일 이내의 운동 목록 (최신순). 연결 안 됐으면 데모 데이터."""
     token = _valid_access_token()
     if not token:
         return _mock_workouts()
@@ -180,6 +241,10 @@ def get_recent_workouts(days=1, limit=5):
         start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         data = _get("/v2/activity/workout", token, {"start": start, "limit": limit})
         records = [_normalize_workout(w) for w in data.get("records", [])]
+        # 점수 있는 운동 먼저, 그 안에서 최신순
+        records.sort(key=lambda x: (not x["scored"], x.get("start") or ""), reverse=False)
+        records.sort(key=lambda x: x.get("start") or "", reverse=True)
+        records.sort(key=lambda x: not x["scored"])  # 점수 없는 건 뒤로
         return records or _mock_workouts()
     except Exception:
         return _mock_workouts()
@@ -204,15 +269,32 @@ def get_latest_recovery():
 
 # ── 데모(샘플) 데이터 ─────────────────────────────────────────────────
 def _mock_workouts():
-    return [{
-        "sport": "러닝",
-        "start": "2026-07-06T06:30:00Z",
-        "end": "2026-07-06T07:12:00Z",
-        "duration_min": 42,
-        "strain": 12.4,
-        "avg_hr": 148,
-        "max_hr": 172,
-        "kcal": 430,
-        "distance_m": 6200,
-        "_mock": True,
-    }]
+    return [
+        {
+            "id": "mock-1", "sport": "러닝", "_mock": True,
+            "start": "2026-07-06T02:46:00Z", "end": "2026-07-06T03:28:00Z",
+            "local_time": "07/06 11:46", "scored": True,
+            "duration_min": 42, "strain": 14.8, "avg_hr": 148, "max_hr": 188,
+            "kcal": 565, "distance_m": 2390, "altitude_gain_m": 12,
+            "percent_recorded": 100,
+            "zones": {"zone1": 8.0, "zone2": 7.0, "zone3": 6.3,
+                      "zone4": 11.8, "zone5": 9.0},
+        },
+        {
+            "id": "mock-2", "sport": "웨이트 트레이닝", "_mock": True,
+            "start": "2026-07-06T10:30:00Z", "end": "2026-07-06T10:56:00Z",
+            "local_time": "07/06 19:30", "scored": True,
+            "duration_min": 26, "strain": 8.1, "avg_hr": 112, "max_hr": 141,
+            "kcal": 190, "distance_m": None, "altitude_gain_m": None,
+            "percent_recorded": 100,
+            "zones": {"zone1": 14.0, "zone2": 8.0, "zone3": 4.0},
+        },
+        {
+            "id": "mock-3", "sport": "운동", "_mock": True,
+            "start": "2026-07-06T00:10:00Z", "end": "2026-07-06T00:17:00Z",
+            "local_time": "07/06 09:10", "scored": False,
+            "duration_min": 7, "strain": None, "avg_hr": None, "max_hr": None,
+            "kcal": None, "distance_m": None, "altitude_gain_m": None,
+            "percent_recorded": None, "zones": {},
+        },
+    ]

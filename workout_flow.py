@@ -1,7 +1,7 @@
-"""운동 모드 Streamlit 흐름.
+"""운동 모드 Streamlit 흐름 (하루 여러 운동 멀티 선택 + 편집 지원).
 
-STEP w0 : 오늘 운동 불러오기 (Whoop) + 운동 선택
-STEP w1 : 운동 전후 기분·몸 상태 직접 입력
+STEP w0 : 오늘 운동 불러오기 (Whoop) + 여러 운동 체크박스 선택
+STEP w1 : 종목명·거리 편집 + 운동 전후 기분·몸 상태 입력
 STEP w2 : 분석 + 운동 일지 초안 → 수정 → 네이버 HTML 저장
 """
 import os
@@ -18,10 +18,27 @@ def _profile():
     return profile_store.load(profile_store.WORKOUT_PROFILE, profile_store.WORKOUT_DEFAULT)
 
 
+def _card(w, unscored=False):
+    """운동 한 건을 카드로 표시."""
+    meta = []
+    if w.get("strain") is not None:
+        meta.append(f"Strain {w['strain']}")
+    if w.get("avg_hr"):
+        meta.append(f"평균 {w['avg_hr']}bpm")
+    if w.get("kcal"):
+        meta.append(f"{w['kcal']}kcal")
+    meta_line = " &nbsp;|&nbsp; ".join(meta) if meta else "상세 데이터 없음"
+    tag = ' <span style="color:#e8590c;">· 점수 없음</span>' if unscored else ""
+    st.markdown(f"""<div class="song-card">
+<div class="song-title">🏃 {w.get('sport','운동')} · {w.get('duration_min','?')}분{tag}</div>
+<div class="song-meta">🕒 {w.get('local_time','')} &nbsp;|&nbsp; {meta_line}</div>
+</div>""", unsafe_allow_html=True)
+
+
 def run():
     step = st.session_state.step
 
-    # ── STEP w0: 운동 불러오기 ───────────────────────────────
+    # ── STEP w0: 운동 불러오기 + 멀티 선택 ───────────────────
     if step == "w0":
         st.markdown('<div class="step-pill">🏃 1단계 — 오늘 운동 불러오기</div>',
                     unsafe_allow_html=True)
@@ -40,56 +57,105 @@ def run():
             st.divider()
             st.caption("연결 없이 먼저 둘러보려면 아래 데모 데이터로 진행할 수 있습니다.")
         else:
-            st.info("ℹ️ Whoop 미연결 상태 — 데모(샘플) 운동 데이터로 흐름을 보여드립니다. "
-                    "실제 연동은 WHOOP_CLIENT_ID / SECRET 을 설정한 뒤 가능합니다.")
+            st.info("ℹ️ Whoop 미연결 상태 — 데모(샘플) 운동 데이터로 흐름을 보여드립니다.")
 
         st.write("")
         if not st.session_state.wk_workouts:
             if st.button("📥 오늘 운동 불러오기", type="primary"):
                 with st.spinner("Whoop에서 데이터를 가져오는 중..."):
-                    st.session_state.wk_workouts = whoop_agent.get_recent_workouts(days=1)
+                    st.session_state.wk_workouts = whoop_agent.get_recent_workouts()
                     st.session_state.wk_recovery = whoop_agent.get_latest_recovery()
                 st.rerun()
             return
 
-        st.markdown("**불러온 운동을 선택하세요:**")
-        for i, w in enumerate(st.session_state.wk_workouts):
-            col_card, col_btn = st.columns([5, 1])
-            with col_card:
-                dist = f' · {round(w["distance_m"]/1000, 2)}km' if w.get("distance_m") else ""
-                st.markdown(f"""<div class="song-card">
-<div class="song-title">🏃 {w.get('sport','운동')} · {w.get('duration_min','?')}분{dist}</div>
-<div class="song-meta">Strain {w.get('strain','-')} &nbsp;|&nbsp; 평균 {w.get('avg_hr','-')}bpm &nbsp;|&nbsp; {w.get('kcal','-')}kcal</div>
-</div>""", unsafe_allow_html=True)
-            with col_btn:
+        workouts = st.session_state.wk_workouts
+        scored = [(i, w) for i, w in enumerate(workouts) if w.get("scored")]
+        unscored = [(i, w) for i, w in enumerate(workouts) if not w.get("scored")]
+
+        st.markdown("**오늘 블로그에 담을 운동을 모두 선택하세요.** (여러 개 선택 가능)")
+        st.write("")
+
+        for i, w in scored:
+            c1, c2 = st.columns([1, 9])
+            with c1:
                 st.write("")
-                if st.button("선택", key=f"wk_{i}", type="primary"):
-                    st.session_state.wk_selected = w
-                    st.session_state.wk_summary = workout_agent.format_summary(
-                        w, st.session_state.wk_recovery)
+                st.checkbox(" ", key=f"pick_wk_{i}", label_visibility="collapsed")
+            with c2:
+                _card(w)
+
+        if unscored:
+            with st.expander(f"점수 없는 기록 {len(unscored)}개 더 보기 "
+                             "(짧거나 자동 감지된 활동 — 보통 제외해도 됩니다)"):
+                for i, w in unscored:
+                    c1, c2 = st.columns([1, 9])
+                    with c1:
+                        st.write("")
+                        st.checkbox(" ", key=f"pick_wk_{i}", label_visibility="collapsed")
+                    with c2:
+                        _card(w, unscored=True)
+
+        st.write("")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 다시 불러오기"):
+                st.session_state.wk_workouts = []
+                st.rerun()
+        with col2:
+            if st.button("선택 완료 →", type="primary"):
+                chosen = [w for i, w in enumerate(workouts)
+                          if st.session_state.get(f"pick_wk_{i}")]
+                if not chosen:
+                    st.warning("운동을 하나 이상 선택해주세요.")
+                else:
+                    st.session_state.wk_selected_list = chosen
                     st.session_state.step = "w1"
                     st.rerun()
 
-        st.write("")
-        if st.button("🔄 다시 불러오기"):
-            st.session_state.wk_workouts = []
-            st.rerun()
-
-    # ── STEP w1: 주관적 기록 입력 ────────────────────────────
+    # ── STEP w1: 종목·거리 편집 + 주관적 기록 ────────────────
     elif step == "w1":
-        st.markdown('<div class="step-pill">✍️ 2단계 — 오늘의 기분·몸 상태</div>',
+        st.markdown('<div class="step-pill">✍️ 2단계 — 확인 & 오늘의 기분</div>',
                     unsafe_allow_html=True)
-        st.markdown('<div class="section-label">불러온 운동 데이터</div>',
-                    unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{st.session_state.wk_summary}</div>',
-                    unsafe_allow_html=True)
+        chosen = st.session_state.wk_selected_list
+        st.caption("종목명이나 거리가 이상하면 여기서 바로 고칠 수 있어요. "
+                   "(트레드밀이면 GPS 거리가 틀리니 직접 입력을 권장합니다)")
         st.write("")
-        st.caption("Whoop 숫자에 나의 느낌을 더하면 훨씬 생생한 일지가 됩니다. (비워도 됩니다)")
 
+        for i, w in enumerate(chosen):
+            st.markdown(f'<div class="section-label">운동 {i+1} · {w.get("local_time","")}</div>',
+                        unsafe_allow_html=True)
+            c1, c2 = st.columns([1, 1])
+            with c1:
+                st.text_input("종목명", value=w.get("sport", "운동"), key=f"sport_{i}")
+            with c2:
+                has_gps = bool(w.get("distance_m"))
+                opts = ["자동(GPS)", "트레드밀·실내 (직접 입력)", "거리 없음"]
+                default = 0 if has_gps else 2
+                mode = st.radio("거리 처리", opts, index=default, key=f"distmode_{i}",
+                                horizontal=False)
+                if mode == opts[0] and has_gps:
+                    st.caption(f"GPS 거리: {round(w['distance_m']/1000, 2)} km")
+                elif mode == opts[1]:
+                    st.number_input("거리 직접 입력 (km)", min_value=0.0, step=0.1,
+                                    value=round((w.get("distance_m") or 0) / 1000, 2),
+                                    key=f"distkm_{i}")
+            # 요약 미리보기
+            preview = []
+            if w.get("strain") is not None:
+                preview.append(f"Strain {w['strain']}")
+            if w.get("max_hr"):
+                preview.append(f"최대 {w['max_hr']}bpm")
+            if w.get("kcal"):
+                preview.append(f"{w['kcal']}kcal")
+            if preview:
+                st.caption(" · ".join(preview))
+            st.write("")
+
+        st.divider()
+        st.markdown("**오늘의 기분·몸 상태** (비워도 됩니다. 적으면 훨씬 생생한 일지가 됩니다)")
         before = st.text_area("운동 전 기분/컨디션", key="wk_before_in",
                               placeholder="예: 아침부터 몸이 무거웠는데 그래도 나가보자 싶었다")
         body = st.text_area("운동 중·후 몸 상태", key="wk_body_in",
-                            placeholder="예: 3km 지나니 리듬이 붙었다. 오른쪽 무릎이 살짝 뻐근")
+                            placeholder="예: 초반엔 뻑뻑했는데 30분 지나니 리듬이 붙었다. 오른쪽 무릎 살짝 뻐근")
         after = st.text_area("운동 후 기분", key="wk_after_in",
                              placeholder="예: 땀 흘리고 나니 머리가 맑아지고 개운했다")
 
@@ -100,9 +166,28 @@ def run():
                 st.rerun()
         with col2:
             if st.button("분석하고 초안 만들기 →", type="primary"):
+                finalized = []
+                opts = ["자동(GPS)", "트레드밀·실내 (직접 입력)", "거리 없음"]
+                for i, w in enumerate(chosen):
+                    e = dict(w)
+                    e["sport"] = st.session_state.get(f"sport_{i}", w.get("sport")).strip() or "운동"
+                    mode = st.session_state.get(f"distmode_{i}", opts[2])
+                    if mode == opts[0]:
+                        e["distance_source"] = "gps"
+                        e["distance_km"] = round((w.get("distance_m") or 0) / 1000, 2) or None
+                    elif mode == opts[1]:
+                        e["distance_source"] = "manual"
+                        e["distance_km"] = st.session_state.get(f"distkm_{i}") or None
+                    else:
+                        e["distance_source"] = "none"
+                        e["distance_km"] = None
+                    finalized.append(e)
+                st.session_state.wk_selected_list = finalized
                 st.session_state.wk_before = before
                 st.session_state.wk_body = body
                 st.session_state.wk_after = after
+                st.session_state.wk_summary = workout_agent.format_summary(
+                    finalized, st.session_state.wk_recovery)
                 st.session_state.wk_analysis = ""
                 st.session_state.wk_blog = ""
                 st.session_state.step = "w2"
@@ -113,6 +198,11 @@ def run():
         st.markdown('<div class="step-pill">🧠 3단계 — 분석 & 운동 일지</div>',
                     unsafe_allow_html=True)
         prof = _profile()
+
+        st.markdown('<div class="section-label">오늘의 운동 데이터</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="content-box">{st.session_state.wk_summary}</div>',
+                    unsafe_allow_html=True)
+        st.write("")
 
         if not st.session_state.wk_analysis:
             with st.spinner("코치가 오늘 운동을 분석하는 중..."):
@@ -143,9 +233,9 @@ def run():
         with col1:
             if st.button("✏️ 수정 요청", disabled=not feedback.strip()):
                 with st.spinner("수정 중..."):
-                    ctx = f"운동: {st.session_state.wk_selected.get('sport','')}"
+                    sports = ", ".join(w.get("sport", "") for w in st.session_state.wk_selected_list)
                     st.session_state.wk_blog = writer.revise_with_feedback(
-                        "운동 일지", st.session_state.wk_blog, feedback, ctx)
+                        "운동 일지", st.session_state.wk_blog, feedback, f"운동: {sports}")
                 st.rerun()
         with col2:
             if st.button("✅ 완성 & 저장", type="primary"):
@@ -159,18 +249,20 @@ def run():
 
 
 def _save_and_show():
-    w = st.session_state.wk_selected
+    chosen = st.session_state.wk_selected_list
     rec = st.session_state.wk_recovery
+    sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
+    total_min = sum(w.get("duration_min") or 0 for w in chosen)
     naver_html = build_naver_html(
-        title=f"오늘의 운동 — {w.get('sport','운동')}",
-        subtitle=f"{w.get('duration_min','?')}분 · Strain {w.get('strain','-')}",
-        stat_rows=workout_agent.stat_rows(w, rec),
+        title=f"오늘의 운동 — {sports}",
+        subtitle=f"총 {total_min}분 · {len(chosen)}개 세션" if len(chosen) > 1
+                 else f"{total_min}분",
+        stat_rows=workout_agent.stat_rows(chosen, rec),
         body_text=st.session_state.wk_blog,
     )
     base = os.path.dirname(__file__)
-    txt_name = "workout_log.txt"
-    with open(os.path.join(base, txt_name), "w", encoding="utf-8") as f:
-        f.write(f"[운동: {w.get('sport','')}]\n{st.session_state.wk_summary}\n\n"
+    with open(os.path.join(base, "workout_log.txt"), "w", encoding="utf-8") as f:
+        f.write(f"[운동: {sports}]\n{st.session_state.wk_summary}\n\n"
                 f"{st.session_state.wk_blog}")
     st.session_state.wk_saved_html = naver_html
     st.success("💾 저장 완료!")
@@ -190,9 +282,12 @@ def _show_output():
 
 
 def _reset():
-    for k in ("wk_workouts", "wk_recovery", "wk_selected", "wk_summary",
+    for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html"):
+        st.session_state.pop(k, None)
+    # 체크박스 상태도 정리
+    for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
         st.session_state.pop(k, None)
     st.session_state.mode = None
     st.session_state.step = 0

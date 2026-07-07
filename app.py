@@ -57,7 +57,7 @@ DEFAULTS = {
     # 운동 모드
     "wk_workouts": [],
     "wk_recovery": {},
-    "wk_selected": {},
+    "wk_selected_list": [],
     "wk_summary": "",
     "wk_before": "",
     "wk_body": "",
