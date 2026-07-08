@@ -315,12 +315,26 @@ def run():
 
         if st.session_state.get("blog_saved_html"):
             fname, html_fname = st.session_state.blog_saved_names
-            tab1, tab2 = st.tabs(["📄 텍스트 다운로드", "🟢 네이버 블로그 HTML"])
+            plain_lines = [f"{song.get('artist','')} — {song.get('track','')}",
+                           f"💿 {song.get('album','')}"]
+            if song.get("version_info"):
+                plain_lines.append(f"({song['version_info']})")
+            plain_lines += ["", st.session_state.blog.strip()]
+            plain = "\n".join(plain_lines)
+
+            tab1, tab2, tab3 = st.tabs(
+                ["📋 네이버에 붙여넣기 (추천)", "📥 다운로드", "🟢 HTML (고급)"])
             with tab1:
-                st.download_button("📥 텍스트 다운로드", data=st.session_state.blog,
-                    file_name=fname, mime="text/plain")
+                st.caption("아래 상자 오른쪽 위 복사 아이콘을 누르고, 네이버 글쓰기 화면에 그대로 붙여넣으세요. "
+                           "서식 없이 깔끔하게 들어갑니다. (사진은 네이버에서 직접 추가)")
+                st.code(plain, language=None)
             with tab2:
-                st.caption("아래 HTML을 복사해서 네이버 블로그 → 글쓰기 → HTML 편집기에 붙여넣으세요.")
-                st.code(st.session_state.blog_saved_html, language="html")
-                st.download_button("📥 HTML 다운로드", data=st.session_state.blog_saved_html,
+                st.download_button("📥 텍스트 파일 다운로드", data=plain,
+                    file_name=fname, mime="text/plain")
+                st.download_button("📥 HTML 파일 다운로드", data=st.session_state.blog_saved_html,
                     file_name=html_fname, mime="text/html")
+            with tab3:
+                st.caption("네이버 새 에디터는 HTML 직접 붙여넣기를 지원하지 않습니다. "
+                           "표/이미지까지 살리고 싶으면: HTML 파일 다운로드→브라우저로 열기→"
+                           "화면 전체 선택·복사→네이버에 붙여넣으면 서식이 어느 정도 유지됩니다.")
+                st.code(st.session_state.blog_saved_html, language="html")

@@ -248,6 +248,20 @@ def run():
             _show_output()
 
 
+def _plain_text():
+    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 통계 한 줄 + 본문)."""
+    chosen = st.session_state.wk_selected_list
+    rec = st.session_state.wk_recovery
+    sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
+    rows = workout_agent.stat_rows(chosen, rec)
+    stat_line = " · ".join(f"{label} {value}" for label, value in rows)
+    lines = [f"오늘의 운동 — {sports}", ""]
+    if stat_line:
+        lines += [f"📊 {stat_line}", ""]
+    lines.append(st.session_state.wk_blog.strip())
+    return "\n".join(lines)
+
+
 def _save_and_show():
     chosen = st.session_state.wk_selected_list
     rec = st.session_state.wk_recovery
@@ -262,23 +276,30 @@ def _save_and_show():
     )
     base = os.path.dirname(__file__)
     with open(os.path.join(base, "workout_log.txt"), "w", encoding="utf-8") as f:
-        f.write(f"[운동: {sports}]\n{st.session_state.wk_summary}\n\n"
-                f"{st.session_state.wk_blog}")
+        f.write(_plain_text())
     st.session_state.wk_saved_html = naver_html
     st.success("💾 저장 완료!")
 
 
 def _show_output():
+    plain = _plain_text()
     naver_html = st.session_state.wk_saved_html
-    tab1, tab2 = st.tabs(["📄 텍스트 다운로드", "🟢 네이버 블로그 HTML"])
+    tab1, tab2, tab3 = st.tabs(
+        ["📋 네이버에 붙여넣기 (추천)", "📥 다운로드", "🟢 HTML (표 포함·고급)"])
     with tab1:
-        st.download_button("📥 텍스트 다운로드", data=st.session_state.wk_blog,
-            file_name="workout_log.txt", mime="text/plain")
+        st.caption("아래 상자 오른쪽 위 복사 아이콘을 누르고, 네이버 글쓰기 화면에 그대로 붙여넣으세요. "
+                   "서식 없이 깔끔하게 들어갑니다. (사진은 네이버에서 직접 추가)")
+        st.code(plain, language=None)
     with tab2:
-        st.caption("아래 HTML을 복사해서 네이버 블로그 → 글쓰기 → HTML 편집기에 붙여넣으세요.")
-        st.code(naver_html, language="html")
-        st.download_button("📥 HTML 다운로드", data=naver_html,
+        st.download_button("📥 텍스트 파일 다운로드", data=plain,
+            file_name="workout_log.txt", mime="text/plain")
+        st.download_button("📥 HTML 파일 다운로드", data=naver_html,
             file_name="workout_log_naver.html", mime="text/html")
+    with tab3:
+        st.caption("네이버 새 에디터는 HTML 직접 붙여넣기를 지원하지 않습니다. "
+                   "표까지 살리고 싶으면: HTML 파일을 다운로드→브라우저로 열기→화면을 전체 선택·복사→"
+                   "네이버에 붙여넣으면 서식이 어느 정도 유지됩니다.")
+        st.code(naver_html, language="html")
 
 
 def _reset():
