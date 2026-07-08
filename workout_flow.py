@@ -108,6 +108,8 @@ def run():
                 if not chosen:
                     st.warning("운동을 하나 이상 선택해주세요.")
                 else:
+                    # 먼저 한 운동이 운동 1이 되도록 시간 오름차순 정렬
+                    chosen.sort(key=lambda w: w.get("start") or "")
                     st.session_state.wk_selected_list = chosen
                     st.session_state.step = "w1"
                     st.rerun()
@@ -191,6 +193,7 @@ def run():
                     finalized, st.session_state.wk_recovery)
                 st.session_state.wk_analysis = ""
                 st.session_state.wk_blog = ""
+                st.session_state.wk_blog_prev = ""
                 st.session_state.step = "w2"
                 st.rerun()
 
@@ -229,21 +232,38 @@ def run():
                     unsafe_allow_html=True)
         st.write("")
 
+        st.caption("💡 종목명·거리 같은 '데이터'를 고치려면 아래 **← 데이터 다시 편집**으로 돌아가세요. "
+                   "여기 수정 요청은 '글의 문장'을 다듬는 용도예요.")
         feedback = st.text_input("수정 요청 (없으면 비워두고 완성)", key="wk_fb",
             placeholder="예: 더 담백하게, 코치 조언을 짧게, 마무리를 다르게...")
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            if st.button("✏️ 수정 요청", disabled=not feedback.strip()):
+            if st.button("✏️ 수정 요청", disabled=not feedback.strip(),
+                         use_container_width=True):
                 with st.spinner("수정 중..."):
                     sports = ", ".join(w.get("sport", "") for w in st.session_state.wk_selected_list)
+                    st.session_state.wk_blog_prev = st.session_state.wk_blog  # 되돌리기용 백업
                     st.session_state.wk_blog = writer.revise_with_feedback(
                         "운동 일지", st.session_state.wk_blog, feedback, f"운동: {sports}")
                 st.rerun()
         with col2:
-            if st.button("✅ 완성 & 저장", type="primary"):
+            if st.session_state.get("wk_blog_prev"):
+                if st.button("↩️ 수정 전으로 되돌리기", use_container_width=True):
+                    st.session_state.wk_blog = st.session_state.wk_blog_prev
+                    st.session_state.wk_blog_prev = ""
+                    st.rerun()
+
+        st.write("")
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            if st.button("← 데이터 다시 편집", use_container_width=True):
+                st.session_state.step = "w1"
+                st.rerun()
+        with col_b:
+            if st.button("✅ 완성 & 저장", type="primary", use_container_width=True):
                 _save_and_show()
-        with col3:
-            if st.button("↩️ 처음부터"):
+        with col_c:
+            if st.button("↩️ 처음부터", use_container_width=True):
                 _reset()
 
         if st.session_state.get("wk_saved_html"):
@@ -347,7 +367,7 @@ def _show_output():
 def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
-              "wk_saved_html", "wk_notion_url"):
+              "wk_saved_html", "wk_notion_url", "wk_blog_prev"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:

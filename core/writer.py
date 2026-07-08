@@ -25,18 +25,24 @@ def generate(prompt, model=WRITER_MODEL, max_tokens=1500):
 
 
 def revise_with_feedback(content_type, original, feedback, context=""):
-    """초안을 사용자 피드백에 맞게 다듬는다.
+    """초안을 사용자 피드백에 맞게 다듬어 '수정된 전체 본문만' 반환한다.
 
     context: 음악/운동 등 도메인 맥락 한 줄 (선택).
     """
-    prompt = f"""다음 {content_type} 내용을 사용자 피드백에 맞게 수정해주세요.
+    prompt = f"""아래는 이미 완성된 {content_type} 원문입니다.
+사용자의 '수정 요청'을 반영해서 원문을 다시 써주세요.
 {context}
 
-[원본]
+[원문]
 {original}
 
-[사용자 피드백]
+[수정 요청]
 {feedback}
 
-같은 형식과 분량을 유지하면서 피드백을 반영해주세요."""
+반드시 지킬 규칙:
+- 수정된 {content_type}의 '전체 본문'만 출력하세요.
+- "확인했습니다", "수정했습니다", "~가 맞으시군요" 같은 대화·인사·설명을 절대 넣지 마세요.
+- 요청된 부분만 반영하고, 나머지 내용·분량·형식·문체는 그대로 유지하세요.
+- 이미 요청대로 되어 있으면 원문을 거의 그대로 다시 출력하세요.
+- 원문을 감싸는 따옴표나 머리말 없이, 본문 텍스트만 그대로 출력하세요."""
     return generate(prompt)
