@@ -11,6 +11,42 @@ ZONE_LABELS = {
     "zone4": "존4(고강도)", "zone5": "존5(최대)",
 }
 
+# 종목명 키워드 → 이모지 (붙여넣기 텍스트 가독성용)
+_SPORT_EMOJI = [
+    (("러닝", "달리", "run"), "🏃"),
+    (("걷", "워킹", "walk", "하이킹", "hik"), "🚶"),
+    (("사이클", "자전거", "cycl", "스피닝", "spin"), "🚴"),
+    (("수영", "swim"), "🏊"),
+    (("웨이트", "근력", "역도", "lift", "strength"), "🏋️"),
+    (("요가", "필라테스", "yoga", "pilates", "명상"), "🧘"),
+    (("클라이밍", "climb"), "🧗"),
+    (("테니스", "스쿼시", "배드민턴", "피클"), "🎾"),
+    (("축구", "농구", "야구", "soccer", "basket"), "⚽"),
+]
+
+
+def sport_emoji(sport):
+    s = (sport or "").lower()
+    for keys, emoji in _SPORT_EMOJI:
+        if any(k in s for k in keys):
+            return emoji
+    return "💪"
+
+
+def workout_line(w):
+    """붙여넣기 텍스트용 운동 한 줄 요약 (이모지 + 핵심 수치)."""
+    parts = [f"{w.get('duration_min','?')}분"]
+    dt = _distance_text(w)
+    if dt:
+        parts.append(dt)
+    if w.get("strain") is not None:
+        parts.append(f"Strain {w['strain']}")
+    if w.get("avg_hr"):
+        parts.append(f"평균 {w['avg_hr']}bpm")
+    if w.get("kcal"):
+        parts.append(f"{w['kcal']}kcal")
+    return f"{sport_emoji(w.get('sport'))} {w.get('sport','운동')} · " + " · ".join(parts)
+
 
 def _distance_text(w):
     """편집된 운동의 거리 표기. distance_source: gps|manual|none."""
@@ -64,7 +100,7 @@ def format_summary(workouts, recovery=None):
     if recovery:
         rec = []
         if recovery.get("recovery") is not None:
-            rec.append(f"오늘 회복도: {recovery['recovery']}%")
+            rec.append(f"전일 회복도: {recovery['recovery']}%")
         if recovery.get("resting_hr"):
             rec.append(f"안정시 심박수: {recovery['resting_hr']} bpm")
         if recovery.get("hrv"):
@@ -100,7 +136,7 @@ def stat_rows(workouts, recovery=None):
     if max_hrs:
         rows.append(("최대 심박", f"{max(max_hrs)} bpm"))
     if recovery and recovery.get("recovery") is not None:
-        rows.append(("회복도", f"{recovery['recovery']}%"))
+        rows.append(("전일 회복도", f"{recovery['recovery']}%"))
     return rows
 
 
@@ -124,10 +160,23 @@ def analyze_workout(summary, profile=None):
     return writer.generate(prompt, model=writer.QUICK_MODEL, max_tokens=1200)
 
 
-def write_workout_blog(summary, analysis, before, body, after, profile=None):
+def write_workout_blog(summary, analysis, before, body, after, profile=None,
+                       n_workouts=1):
     """데이터 + 코치 분석 + 나의 주관적 느낌을 하나의 운동 일지로 엮는다."""
     tone = (profile or {}).get("tone", "")
     tone_line = f"원하는 글 톤: {tone}" if tone else ""
+
+    if n_workouts > 1:
+        structure = (
+            "오늘은 여러 운동을 했습니다. 각 운동을 이모지 소제목(예: '🏃 러닝', "
+            "'🏋️ 웨이트 트레이닝')으로 구분해 섹션을 나눠 써주세요. 각 섹션 안에서 "
+            "그 운동의 데이터와 그때의 느낌을 녹이고, 마지막에 하루 전체를 아우르는 "
+            "짧은 마무리 문단(내일의 나에게 건네는 한 문장 포함)을 넣어주세요.")
+    else:
+        structure = (
+            "소제목 없이 일기체로 자연스럽게 이어서 쓰고, 마지막은 내일의 나에게 "
+            "건네는 한 문장으로 마무리해주세요.")
+
     prompt = f"""당신은 운동 일기를 쓰는 블로거입니다.
 아래 재료를 '오늘의 운동' 한 편의 진솔한 일지로 엮어주세요.
 
@@ -149,6 +198,5 @@ def write_workout_blog(summary, analysis, before, body, after, profile=None):
 {tone_line}
 
 600~900자로, 객관적인 데이터와 나의 주관적인 느낌을 자연스럽게 섞어주세요.
-여러 운동을 했다면 하루의 흐름으로 이어서 써주세요.
-소제목 없이 일기체로 쓰고, 마지막은 내일의 나에게 건네는 한 문장으로 마무리해주세요."""
+{structure}"""
     return writer.generate(prompt, max_tokens=1800)

@@ -215,7 +215,8 @@ def run():
                 st.session_state.wk_blog = workout_agent.write_workout_blog(
                     st.session_state.wk_summary, st.session_state.wk_analysis,
                     st.session_state.wk_before, st.session_state.wk_body,
-                    st.session_state.wk_after, prof)
+                    st.session_state.wk_after, prof,
+                    n_workouts=len(st.session_state.wk_selected_list))
             st.rerun()
 
         st.markdown('<div class="section-label">코치의 분석</div>', unsafe_allow_html=True)
@@ -249,16 +250,25 @@ def run():
 
 
 def _plain_text():
-    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 통계 한 줄 + 본문)."""
+    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 운동 요약 + 본문)."""
     chosen = st.session_state.wk_selected_list
     rec = st.session_state.wk_recovery
     sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
-    rows = workout_agent.stat_rows(chosen, rec)
-    stat_line = " · ".join(f"{label} {value}" for label, value in rows)
     lines = [f"오늘의 운동 — {sports}", ""]
-    if stat_line:
-        lines += [f"📊 {stat_line}", ""]
-    lines.append(st.session_state.wk_blog.strip())
+
+    if len(chosen) > 1:
+        # 운동이 여러 개면 각 운동을 한 줄씩 구분해서 보여준다
+        for w in chosen:
+            lines.append(workout_agent.workout_line(w))
+        if rec.get("recovery") is not None:
+            lines.append(f"📊 전일 회복도 {rec['recovery']}%")
+    else:
+        rows = workout_agent.stat_rows(chosen, rec)
+        stat_line = " · ".join(f"{label} {value}" for label, value in rows)
+        if stat_line:
+            lines.append(f"📊 {stat_line}")
+
+    lines += ["", "─────────────", "", st.session_state.wk_blog.strip()]
     return "\n".join(lines)
 
 
