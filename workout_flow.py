@@ -9,6 +9,7 @@ import streamlit as st
 
 import whoop_agent
 import workout_agent
+import notion_agent
 from core import writer
 from core.naver_html import build_naver_html, wrap_document
 from core import profile as profile_store
@@ -249,15 +250,12 @@ def run():
             _show_output()
 
 
-def _plain_text():
-    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 운동 요약 + 본문)."""
+def _summary_lines():
+    """제목 아래 들어갈 운동 요약 줄 목록 (붙여넣기·Notion 공용)."""
     chosen = st.session_state.wk_selected_list
     rec = st.session_state.wk_recovery
-    sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
-    lines = [f"오늘의 운동 — {sports}", ""]
-
+    lines = []
     if len(chosen) > 1:
-        # 운동이 여러 개면 각 운동을 한 줄씩 구분해서 보여준다
         for w in chosen:
             lines.append(workout_agent.workout_line(w))
         if rec.get("recovery") is not None:
@@ -267,7 +265,20 @@ def _plain_text():
         stat_line = " · ".join(f"{label} {value}" for label, value in rows)
         if stat_line:
             lines.append(f"📊 {stat_line}")
+    return lines
 
+
+def _title():
+    chosen = st.session_state.wk_selected_list
+    sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
+    date = chosen[0].get("local_time", "")[:5] if chosen else ""
+    return f"오늘의 운동 — {sports}" + (f" ({date})" if date else "")
+
+
+def _plain_text():
+    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 운동 요약 + 본문)."""
+    lines = [_title(), ""]
+    lines += _summary_lines()
     lines += ["", "─────────────", "", st.session_state.wk_blog.strip()]
     return "\n".join(lines)
 
@@ -311,11 +322,32 @@ def _show_output():
                    "화면을 전체 선택·복사→네이버에 붙여넣으면 서식이 어느 정도 유지됩니다.")
         st.code(naver_html, language="html")
 
+    # ── Notion 자동 발행 ──────────────────────────────────
+    st.write("")
+    st.markdown('<div class="section-label">📝 Notion에 바로 올리기</div>',
+                unsafe_allow_html=True)
+    if not notion_agent.has_credentials():
+        st.caption("Notion에 자동 발행하려면 NOTION_TOKEN / NOTION_PARENT_ID 를 설정하세요. "
+                   "(설정법은 DEPLOY.md의 Notion 섹션 참고)")
+    elif st.session_state.get("wk_notion_url"):
+        st.success("✅ Notion에 발행됨!")
+        st.link_button("🔗 Notion에서 열기", st.session_state.wk_notion_url)
+    else:
+        if st.button("📝 Notion에 올리기", type="primary"):
+            with st.spinner("Notion에 글을 만드는 중..."):
+                try:
+                    url = notion_agent.publish(
+                        _title(), _summary_lines(), st.session_state.wk_blog)
+                    st.session_state.wk_notion_url = url
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Notion 발행 실패: {e}")
+
 
 def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
-              "wk_saved_html"):
+              "wk_saved_html", "wk_notion_url"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
