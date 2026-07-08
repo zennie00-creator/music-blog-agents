@@ -164,7 +164,13 @@ def _sport_name(w):
     if name:
         # "running" → "러닝" 처럼 알려진 건 한글로, 아니면 원문 그대로
         key = name.strip().lower().replace(" ", "_")
-        return SPORT_NAME_KO.get(key, name.strip().title())
+        if key in SPORT_NAME_KO:
+            return SPORT_NAME_KO[key]
+        # "weightlifting_msk" 처럼 접미사가 붙은 경우 앞부분으로 재시도
+        base = key.split("_")[0]
+        if base in SPORT_NAME_KO:
+            return SPORT_NAME_KO[base]
+        return name.strip().replace("_", " ").title()
     return SPORT_NAMES.get(w.get("sport_id"), "운동")
 
 

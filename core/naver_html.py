@@ -5,6 +5,19 @@
 """
 
 
+def wrap_document(fragment, title="블로그 글"):
+    """조각 HTML을 브라우저에서 바로 열 수 있는 완전한 문서로 감싼다.
+
+    <meta charset="utf-8"> 를 넣어 한글이 깨지지 않게 한다.
+    """
+    return (
+        '<!doctype html>\n<html lang="ko">\n<head>\n'
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f'<title>{title}</title>\n</head>\n<body>\n{fragment}\n</body>\n</html>'
+    )
+
+
 def _img_table(images):
     """(url, label) 목록을 가로로 나열한 이미지 테이블."""
     cells = ""

@@ -16,7 +16,7 @@ from audio_agent import get_audio_info
 from image_agent import get_album_art, get_artist_image
 
 from core import writer
-from core.naver_html import build_naver_html
+from core.naver_html import build_naver_html, wrap_document
 
 
 # ── 헬퍼 ─────────────────────────────────────────────────
@@ -331,7 +331,9 @@ def run():
             with tab2:
                 st.download_button("📥 텍스트 파일 다운로드", data=plain,
                     file_name=fname, mime="text/plain")
-                st.download_button("📥 HTML 파일 다운로드", data=st.session_state.blog_saved_html,
+                st.download_button("📥 HTML 파일 다운로드",
+                    data=wrap_document(st.session_state.blog_saved_html,
+                                       f"{song.get('artist','')} - {song.get('track','')}"),
                     file_name=html_fname, mime="text/html")
             with tab3:
                 st.caption("네이버 새 에디터는 HTML 직접 붙여넣기를 지원하지 않습니다. "

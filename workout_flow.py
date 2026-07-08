@@ -10,7 +10,7 @@ import streamlit as st
 import whoop_agent
 import workout_agent
 from core import writer
-from core.naver_html import build_naver_html
+from core.naver_html import build_naver_html, wrap_document
 from core import profile as profile_store
 
 
@@ -293,12 +293,12 @@ def _show_output():
     with tab2:
         st.download_button("📥 텍스트 파일 다운로드", data=plain,
             file_name="workout_log.txt", mime="text/plain")
-        st.download_button("📥 HTML 파일 다운로드", data=naver_html,
+        st.download_button("📥 HTML 파일 다운로드", data=wrap_document(naver_html, "오늘의 운동"),
             file_name="workout_log_naver.html", mime="text/html")
     with tab3:
         st.caption("네이버 새 에디터는 HTML 직접 붙여넣기를 지원하지 않습니다. "
-                   "표까지 살리고 싶으면: HTML 파일을 다운로드→브라우저로 열기→화면을 전체 선택·복사→"
-                   "네이버에 붙여넣으면 서식이 어느 정도 유지됩니다.")
+                   "표까지 살리고 싶으면: 위 다운로드 탭에서 HTML 파일을 받아→브라우저로 열기→"
+                   "화면을 전체 선택·복사→네이버에 붙여넣으면 서식이 어느 정도 유지됩니다.")
         st.code(naver_html, language="html")
 
 
