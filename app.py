@@ -7,6 +7,9 @@ import workout_flow
 import whoop_agent
 from core import profile as profile_store
 
+# 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
+APP_VERSION = "2026-07-08 · workout v2 (Notion+3탭+되돌리기)"
+
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="블로그 에이전트", page_icon="🎼", layout="centered")
 
@@ -86,6 +89,7 @@ if "code" in _qp and not st.session_state.get("wk_oauth_done"):
 
 # ── 사이드바: 모드별 프로필 설정 ─────────────────────────
 with st.sidebar:
+    st.caption(f"🟢 버전 {APP_VERSION}")
     if st.session_state.mode:
         if st.button("← 모드 다시 선택", use_container_width=True):
             st.session_state.mode = None
