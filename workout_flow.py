@@ -19,6 +19,27 @@ def _profile():
     return profile_store.load(profile_store.WORKOUT_PROFILE, profile_store.WORKOUT_DEFAULT)
 
 
+def _zone_bar_html(w):
+    """존별 체류시간을 가로 스택 막대로. 존 데이터 없으면 빈 문자열."""
+    zones = w.get("zones") or {}
+    total = sum(v for v in zones.values() if v)
+    if not total:
+        return ""
+    segs = ""
+    for k in sorted(zones):
+        v = zones[k]
+        if not v:
+            continue
+        pct = v / total * 100
+        color = workout_agent.ZONE_COLORS.get(k, "#999")
+        segs += (f'<div style="width:{pct:.1f}%;background:{color};" '
+                 f'title="{workout_agent.ZONE_LABELS.get(k, k)} {v}분"></div>')
+    return (f'<div style="margin:10px 0 2px;font-size:13px;color:#868e96;">'
+            f'{workout_agent.sport_emoji(w.get("sport"))} {w.get("sport","")} — 심박존 분포</div>'
+            f'<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;">{segs}</div>'
+            f'<div style="font-size:12px;color:#adb5bd;margin-top:3px;">{workout_agent.zone_line(w)}</div>')
+
+
 def _card(w, unscored=False):
     """운동 한 건을 카드로 표시."""
     meta = []
@@ -132,15 +153,24 @@ def run():
             with c2:
                 has_gps = bool(w.get("distance_m"))
                 opts = ["자동(GPS)", "트레드밀·실내 (직접 입력)", "거리 없음"]
-                default = 0 if has_gps else 2
+                # 이전에 편집하고 돌아온 경우 그때의 선택을 복원
+                prev_src = w.get("distance_source")
+                if prev_src == "manual":
+                    default = 1
+                elif prev_src == "none":
+                    default = 2
+                elif prev_src == "gps":
+                    default = 0
+                else:
+                    default = 0 if has_gps else 2
                 mode = st.radio("거리 처리", opts, index=default, key=f"distmode_{i}",
                                 horizontal=False)
                 if mode == opts[0] and has_gps:
                     st.caption(f"GPS 거리: {round(w['distance_m']/1000, 2)} km")
                 elif mode == opts[1]:
+                    prev_km = w.get("distance_km") or round((w.get("distance_m") or 0) / 1000, 2)
                     st.number_input("거리 직접 입력 (km)", min_value=0.0, step=0.1,
-                                    value=round((w.get("distance_m") or 0) / 1000, 2),
-                                    key=f"distkm_{i}")
+                                    value=float(prev_km), key=f"distkm_{i}")
             # 요약 미리보기
             preview = []
             if w.get("strain") is not None:
@@ -155,11 +185,15 @@ def run():
 
         st.divider()
         st.markdown("**오늘의 기분·몸 상태** (비워도 됩니다. 적으면 훨씬 생생한 일지가 됩니다)")
+        # 3단계에 갔다가 돌아와도 이전에 쓴 내용이 유지되도록 저장값을 기본값으로
         before = st.text_area("운동 전 기분/컨디션", key="wk_before_in",
+                              value=st.session_state.get("wk_before", ""),
                               placeholder="예: 아침부터 몸이 무거웠는데 그래도 나가보자 싶었다")
         body = st.text_area("운동 중·후 몸 상태", key="wk_body_in",
+                            value=st.session_state.get("wk_body", ""),
                             placeholder="예: 초반엔 뻑뻑했는데 30분 지나니 리듬이 붙었다. 오른쪽 무릎 살짝 뻐근")
         after = st.text_area("운동 후 기분", key="wk_after_in",
+                             value=st.session_state.get("wk_after", ""),
                              placeholder="예: 땀 흘리고 나니 머리가 맑아지고 개운했다")
 
         col1, col2 = st.columns(2)
@@ -191,6 +225,9 @@ def run():
                 st.session_state.wk_after = after
                 st.session_state.wk_summary = workout_agent.format_summary(
                     finalized, st.session_state.wk_recovery)
+                # 최근 2주 추세는 숫자 요약이라 LLM 비용이 거의 들지 않는다
+                if not st.session_state.get("wk_trend"):
+                    st.session_state.wk_trend = whoop_agent.get_trend_summary()
                 st.session_state.wk_analysis = ""
                 st.session_state.wk_blog = ""
                 st.session_state.wk_blog_prev = ""
@@ -206,12 +243,16 @@ def run():
         st.markdown('<div class="section-label">오늘의 운동 데이터</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="content-box">{st.session_state.wk_summary}</div>',
                     unsafe_allow_html=True)
+        zone_bars = "".join(_zone_bar_html(w) for w in st.session_state.wk_selected_list)
+        if zone_bars:
+            st.markdown(zone_bars, unsafe_allow_html=True)
         st.write("")
 
         if not st.session_state.wk_analysis:
-            with st.spinner("코치가 오늘 운동을 분석하는 중..."):
+            with st.spinner("코치가 최근 추세와 함께 오늘 운동을 분석하는 중..."):
                 st.session_state.wk_analysis = workout_agent.analyze_workout(
-                    st.session_state.wk_summary, prof)
+                    st.session_state.wk_summary, prof,
+                    trend=st.session_state.get("wk_trend", ""))
             st.rerun()
 
         if not st.session_state.wk_blog:
@@ -278,6 +319,9 @@ def _summary_lines():
     if len(chosen) > 1:
         for w in chosen:
             lines.append(workout_agent.workout_line(w))
+            zl = workout_agent.zone_line(w)
+            if zl:
+                lines.append(f"   🫀 {zl}")
         if rec.get("recovery") is not None:
             lines.append(f"📊 전일 회복도 {rec['recovery']}%")
     else:
@@ -285,6 +329,9 @@ def _summary_lines():
         stat_line = " · ".join(f"{label} {value}" for label, value in rows)
         if stat_line:
             lines.append(f"📊 {stat_line}")
+        zl = workout_agent.zone_line(chosen[0]) if chosen else ""
+        if zl:
+            lines.append(f"🫀 {zl}")
     return lines
 
 
@@ -367,7 +414,7 @@ def _show_output():
 def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
-              "wk_saved_html", "wk_notion_url", "wk_blog_prev"):
+              "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:

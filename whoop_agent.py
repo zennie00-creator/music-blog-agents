@@ -273,7 +273,54 @@ def get_latest_recovery():
         return {}
 
 
+def get_trend_summary(days=14):
+    """최근 days일 운동·회복 추세를 압축 텍스트로 (LLM 비용 없음).
+
+    코치 분석 프롬프트에 넣어 '연속성 있는 코칭'을 만드는 재료.
+    수백 토큰 수준이라 비용 부담이 거의 없다.
+    """
+    token = _valid_access_token()
+    if not token:
+        return _mock_trend()
+    lines = []
+    try:
+        start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        data = _get("/v2/activity/workout", token, {"start": start, "limit": 25})
+        for rec in data.get("records", []):
+            n = _normalize_workout(rec)
+            if not n["scored"]:
+                continue
+            parts = [f"{n['local_time']} {n['sport']} {n['duration_min']}분"]
+            if n["strain"] is not None:
+                parts.append(f"Strain {n['strain']}")
+            if n["avg_hr"]:
+                parts.append(f"평균 {n['avg_hr']}bpm")
+            lines.append("- " + " · ".join(parts))
+    except Exception:
+        pass
+    try:
+        data = _get("/v2/recovery", token, {"limit": min(days, 25)})
+        recs = []
+        for r in data.get("records", []):
+            s = r.get("score") or {}
+            if s.get("recovery_score") is not None:
+                recs.append(str(round(s["recovery_score"])))
+        if recs:
+            lines.append(f"최근 회복도 흐름(%, 최신순): {', '.join(recs)}")
+    except Exception:
+        pass
+    return "\n".join(lines)
+
+
 # ── 데모(샘플) 데이터 ─────────────────────────────────────────────────
+def _mock_trend():
+    return ("- 07/06 러닝 42분 · Strain 14.8 · 평균 148bpm\n"
+            "- 07/05 웨이트 트레이닝 35분 · Strain 9.2\n"
+            "- 07/03 러닝 38분 · Strain 12.1\n"
+            "- 07/01 요가 30분 · Strain 5.4\n"
+            "최근 회복도 흐름(%, 최신순): 68, 55, 74, 61, 70")
+
+
 def _mock_workouts():
     return [
         {
