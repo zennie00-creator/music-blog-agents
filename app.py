@@ -9,7 +9,7 @@ import whoop_agent
 from core import profile as profile_store
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-13 · v5 (개발일지 모드+사진 업로드)"
+APP_VERSION = "2026-07-13 · v6 (개발일지 수정요청+네이버 복사)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="블로그 에이전트", page_icon="🎼", layout="centered")

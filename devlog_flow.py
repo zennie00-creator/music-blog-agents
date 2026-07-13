@@ -1,8 +1,9 @@
-"""개발 일지 모드 — 메모/마크다운을 Notion '개발일지' 페이지에 자동 발행.
+"""개발 일지 모드 — 메모/마크다운을 다듬어 Notion·네이버에 올린다.
 
 - 저장된 DEVLOG.md를 불러오거나 직접 메모를 쓰고
-- 필요하면 AI로 다듬은 뒤
+- 수정 요청(피드백)으로 다듬고 (되돌리기 가능)
 - 스크린샷/사진과 함께 Notion에 원클릭 발행
+- 네이버 블로그용 깔끔한 텍스트로 복사
 
 발행 위치: NOTION_DEVLOG_PARENT_ID (없으면 NOTION_PARENT_ID로 발행)
 """
@@ -21,17 +22,41 @@ def _devlog_parent():
     return os.environ.get("NOTION_DEVLOG_PARENT_ID", "").strip()
 
 
+def _naver_text(md):
+    """마크다운 기호를 정리해 네이버에 붙여넣기 좋은 평문으로."""
+    out = []
+    for raw in (md or "").splitlines():
+        s = raw.rstrip().replace("**", "")
+        t = s.strip()
+        if t in ("---", "___", "***"):
+            out.append("")
+        elif t.startswith("### "):
+            out.append(t[4:])
+        elif t.startswith("## "):
+            out.append("■ " + t[3:])
+        elif t.startswith("# "):
+            out.append(t[2:])
+        elif t.startswith(("- ", "* ")):
+            out.append("• " + t[2:])
+        elif t.startswith("> "):
+            out.append("“" + t[2:] + "”")
+        else:
+            out.append(s)
+    return "\n".join(out).strip()
+
+
 def run():
-    # 위젯이 그려지기 전에 처리해야 하는 상태 초기화 (Streamlit 제약)
+    # 위젯이 그려지기 전에 처리해야 하는 상태 변경 (Streamlit 제약)
     if st.session_state.pop("dv_clear", False):
         st.session_state.pop("dv_text_in", None)
+        st.session_state.pop("dv_text_prev", None)
         st.session_state.dv_url = ""
 
     st.markdown('<div class="step-pill">📓 개발 일지</div>', unsafe_allow_html=True)
 
     if not notion_agent.has_credentials():
         st.info("Notion 발행에는 NOTION_TOKEN / NOTION_PARENT_ID 설정이 필요합니다. "
-                "(DEPLOY.md 참고)")
+                "(DEPLOY.md 참고) — 네이버 붙여넣기는 설정 없이도 됩니다.")
     elif not _devlog_parent():
         st.warning("NOTION_DEVLOG_PARENT_ID 가 설정돼 있지 않아 운동일지와 같은 위치"
                    "(NOTION_PARENT_ID)에 올라갑니다. 개발일지 전용 페이지에 올리려면 "
@@ -39,21 +64,32 @@ def run():
 
     title = st.text_input("제목", value=f"AI 개발 일지 — {date.today():%Y-%m-%d}")
 
-    # 버튼을 입력칸보다 먼저 처리해야 값 주입이 가능하다 (위젯 생성 후 수정 불가)
+    # ── 모든 본문 변경은 text_area가 그려지기 전에 처리한다 ──
     prev_text = st.session_state.get("dv_text_in", "")
+
     c1, c2 = st.columns(2)
     with c1:
         load_clicked = (os.path.exists(DEVLOG_PATH) and
-                        st.button("📜 저장된 개발일지(DEVLOG.md) 불러오기",
-                                  use_container_width=True))
+                        st.button("📜 저장된 개발일지 불러오기", use_container_width=True))
     with c2:
         polish_clicked = st.button("✨ AI로 다듬기", use_container_width=True,
                                    disabled=not prev_text.strip())
 
+    fb = st.text_input("✏️ 수정 요청 (예: '2일차에 겪은 인코딩 문제를 더 자세히', '더 짧게')",
+                       key="dv_fb")
+    c3, c4 = st.columns(2)
+    with c3:
+        revise_clicked = st.button("✏️ 수정 요청 반영", use_container_width=True,
+                                   disabled=not (prev_text.strip() and fb.strip()))
+    with c4:
+        undo_clicked = st.button("↩️ 되돌리기", use_container_width=True,
+                                 disabled=not st.session_state.get("dv_text_prev"))
+
     if load_clicked:
         with open(DEVLOG_PATH, encoding="utf-8") as f:
             st.session_state.dv_text_in = f.read()
-    if polish_clicked:
+    elif polish_clicked:
+        st.session_state.dv_text_prev = prev_text
         with st.spinner("다듬는 중..."):
             st.session_state.dv_text_in = writer.generate(
                 f"""다음 개발 메모를 Notion에 올릴 개발 일지로 다듬어주세요.
@@ -61,11 +97,27 @@ def run():
 없는 사실을 지어내지 말고, 다듬어진 일지 본문만 출력하세요.
 
 {prev_text}""", max_tokens=3000)
+    elif revise_clicked:
+        st.session_state.dv_text_prev = prev_text
+        with st.spinner("수정 중..."):
+            st.session_state.dv_text_in = writer.revise_with_feedback(
+                "개발 일지(마크다운)", prev_text, fb,
+                "마크다운 구조(#, ##, -, >)는 유지하세요.")
+    elif undo_clicked:
+        st.session_state.dv_text_in = st.session_state.pop("dv_text_prev", prev_text)
 
     txt = st.text_area("내용 (마크다운 지원: #, ##, -, >, ---)", key="dv_text_in",
                        height=340,
                        placeholder="오늘 한 개발 작업을 메모하거나, 위 버튼으로 저장된 개발일지를 불러오세요.")
 
+    # ── 네이버 붙여넣기 ─────────────────────────────────────
+    if (txt or "").strip():
+        with st.expander("📋 네이버 블로그에 붙여넣기"):
+            st.caption("아래 상자 오른쪽 위 복사 아이콘을 눌러 네이버 글쓰기에 붙여넣으세요. "
+                       "(마크다운 기호를 정리한 깔끔한 텍스트)")
+            st.code(_naver_text(txt), language=None)
+
+    # ── Notion 발행 ────────────────────────────────────────
     photos = st.file_uploader("📷 함께 올릴 이미지 (스크린샷 등, 선택 · 여러 장 가능)",
                               accept_multiple_files=True,
                               type=["png", "jpg", "jpeg", "gif", "webp"],
