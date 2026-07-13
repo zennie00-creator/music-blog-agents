@@ -54,7 +54,7 @@ def _stat_table(rows):
 
 
 def build_naver_html(title, subtitle="", meta_lines=None, images=None,
-                     stat_rows=None, body_text="", note=""):
+                     stat_rows=None, body_text="", note="", footer_box=None):
     """네이버 블로그용 HTML 문자열을 만든다.
 
     title      : 큰 제목
@@ -64,6 +64,7 @@ def build_naver_html(title, subtitle="", meta_lines=None, images=None,
     stat_rows  : (label, value) 통계 카드 목록 (선택, 운동용)
     body_text  : 본문. 빈 줄(\\n\\n) 기준으로 문단 분리
     note       : 본문 위 작은 회색 괄호 노트 (선택)
+    footer_box : (제목, 텍스트) — 본문 아래 구분된 박스 영역 (선택, 코치 한마디 등)
     """
     subtitle_html = (
         f'<p style="color:#888;font-size:14px;margin:0 0 8px;">{subtitle}</p>'
@@ -82,11 +83,24 @@ def build_naver_html(title, subtitle="", meta_lines=None, images=None,
         for p in (body_text or "").strip().split("\n\n") if p.strip()
     )
 
+    footer_html = ""
+    if footer_box and footer_box[1]:
+        f_title, f_text = footer_box
+        f_paras = "".join(
+            f'<p style="margin:0 0 1.2em;line-height:1.8;">{p.strip()}</p>'
+            for p in f_text.strip().split("\n\n") if p.strip()
+        )
+        footer_html = f"""
+<div style="margin-top:32px;background:#f6f8f4;border:1px solid #dde5d8;border-radius:10px;padding:20px 22px;">
+<p style="font-size:15px;font-weight:700;margin:0 0 12px;color:#3d5a3d;">{f_title}</p>
+{f_paras}
+</div>"""
+
     return f"""<div style="max-width:680px;margin:0 auto;font-family:'나눔명조','Nanum Myeongjo',Georgia,serif;font-size:16px;color:#2c2c2c;">
 {_img_table(images)}
 <h2 style="font-size:20px;font-weight:700;margin:0 0 6px;">{title}</h2>
 {subtitle_html}{meta_html}{note_html}
 {_stat_table(stat_rows)}
 <hr style="border:none;border-top:1px solid #e9e3d0;margin:20px 0;"/>
-{paragraphs}
+{paragraphs}{footer_html}
 </div>"""

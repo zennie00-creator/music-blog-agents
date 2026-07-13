@@ -63,6 +63,11 @@ def _divider():
     return {"object": "block", "type": "divider", "divider": {}}
 
 
+def _quote(text):
+    return {"object": "block", "type": "quote",
+            "quote": {"rich_text": _rich(text)}}
+
+
 # 운동 소제목에 쓰이는 이모지 (이걸로 시작하는 한 줄은 소제목으로 본다)
 _HEADING_EMOJIS = "🏃🚶🚴🏊🏋️🧘🧗🎾⚽💪"
 
@@ -99,8 +104,11 @@ def _resolve_parent(pid):
     return "page", None
 
 
-def publish(title, summary_lines, body_text):
-    """Notion에 글 한 편을 생성하고 URL을 반환한다."""
+def publish(title, summary_lines, body_text, coach_text=""):
+    """Notion에 글 한 편을 생성하고 URL을 반환한다.
+
+    coach_text: 코치 분석 원문 — 본문 아래 별도 영역(제목+인용)으로 들어간다.
+    """
     if requests is None:
         raise RuntimeError("requests 모듈이 필요합니다.")
     pid = _parent_id()
@@ -110,6 +118,13 @@ def publish(title, summary_lines, body_text):
     if summary_lines:
         children.append(_callout("\n".join(summary_lines)))
     children += _body_blocks(body_text)
+
+    if coach_text and coach_text.strip():
+        children.append(_divider())
+        children.append(_heading("🧑‍🏫 코치의 한마디"))
+        for para in coach_text.strip().split("\n\n"):
+            if para.strip():
+                children.append(_quote(para.strip()))
 
     if kind == "database":
         payload = {

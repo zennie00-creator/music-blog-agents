@@ -343,10 +343,13 @@ def _title():
 
 
 def _plain_text():
-    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 운동 요약 + 본문)."""
+    """네이버에 그대로 붙여넣을 깔끔한 텍스트 (제목 + 운동 요약 + 본문 + 코치)."""
     lines = [_title(), ""]
     lines += _summary_lines()
     lines += ["", "─────────────", "", st.session_state.wk_blog.strip()]
+    coach = (st.session_state.get("wk_analysis") or "").strip()
+    if coach:
+        lines += ["", "─────────────", "", "🧑‍🏫 코치의 한마디", "", coach]
     return "\n".join(lines)
 
 
@@ -361,6 +364,8 @@ def _save_and_show():
                  else f"{total_min}분",
         stat_rows=workout_agent.stat_rows(chosen, rec),
         body_text=st.session_state.wk_blog,
+        footer_box=("🧑‍🏫 코치의 한마디",
+                    (st.session_state.get("wk_analysis") or "").strip()),
     )
     base = os.path.dirname(__file__)
     with open(os.path.join(base, "workout_log.txt"), "w", encoding="utf-8") as f:
@@ -404,7 +409,8 @@ def _show_output():
             with st.spinner("Notion에 글을 만드는 중..."):
                 try:
                     url = notion_agent.publish(
-                        _title(), _summary_lines(), st.session_state.wk_blog)
+                        _title(), _summary_lines(), st.session_state.wk_blog,
+                        coach_text=st.session_state.get("wk_analysis", ""))
                     st.session_state.wk_notion_url = url
                     st.rerun()
                 except Exception as e:
