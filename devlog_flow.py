@@ -73,21 +73,27 @@ def run():
                         st.button("📜 저장된 개발일지 불러오기", use_container_width=True))
     with c2:
         polish_clicked = st.button("✨ AI로 다듬기", use_container_width=True,
-                                   disabled=not prev_text.strip())
+                                   disabled=not prev_text.strip(),
+                                   help="거친 메모를 일지 형태로 '전체 재구성'합니다. "
+                                        "이미 완성된 글에는 쓰지 마세요.")
+        st.caption("✨ 다듬기 = 전체 재구성 (메모용)")
 
-    fb = st.text_input("✏️ 수정 요청 (예: '2일차에 겪은 인코딩 문제를 더 자세히', '더 짧게')",
+    fb = st.text_input("✏️ 수정 요청 (예: '2일차 인코딩 문제를 더 자세히', '더 짧게')",
                        key="dv_fb")
     c3, c4 = st.columns(2)
     with c3:
         revise_clicked = st.button("✏️ 수정 요청 반영", use_container_width=True,
-                                   disabled=not (prev_text.strip() and fb.strip()))
+                                   disabled=not (prev_text.strip() and fb.strip()),
+                                   help="지금 글은 그대로 두고 요청한 부분만 고칩니다.")
+        st.caption("✏️ 수정 = 지금 글 유지 + 요청만 반영")
     with c4:
-        undo_clicked = st.button("↩️ 되돌리기", use_container_width=True,
-                                 disabled=not st.session_state.get("dv_text_prev"))
+        undo_clicked = st.button("↩️ 이전 버전과 바꾸기", use_container_width=True,
+                                 disabled=not st.session_state.get("dv_text_prev"),
+                                 help="수정 전/후 버전을 서로 맞바꿉니다. 다시 누르면 원복됩니다.")
 
     if load_clicked:
-        with open(DEVLOG_PATH, encoding="utf-8") as f:
-            st.session_state.dv_text_in = f.read()
+        st.session_state.dv_text_in = open(DEVLOG_PATH, encoding="utf-8").read()
+        st.rerun()
     elif polish_clicked:
         st.session_state.dv_text_prev = prev_text
         with st.spinner("다듬는 중..."):
@@ -96,15 +102,20 @@ def run():
 마크다운(#, ##, -, >)으로 구조를 잡고, 날짜별 항목은 순서를 유지하세요.
 없는 사실을 지어내지 말고, 다듬어진 일지 본문만 출력하세요.
 
-{prev_text}""", max_tokens=3000)
+{prev_text}""", max_tokens=max(3000, min(8000, len(prev_text) + 500)))
+        st.rerun()
     elif revise_clicked:
         st.session_state.dv_text_prev = prev_text
         with st.spinner("수정 중..."):
             st.session_state.dv_text_in = writer.revise_with_feedback(
                 "개발 일지(마크다운)", prev_text, fb,
                 "마크다운 구조(#, ##, -, >)는 유지하세요.")
+        st.rerun()
     elif undo_clicked:
-        st.session_state.dv_text_in = st.session_state.pop("dv_text_prev", prev_text)
+        # 두 버전을 맞바꿔서 언제든 다시 되돌릴 수 있게 (토글)
+        st.session_state.dv_text_in = st.session_state.dv_text_prev
+        st.session_state.dv_text_prev = prev_text
+        st.rerun()
 
     txt = st.text_area("내용 (마크다운 지원: #, ##, -, >, ---)", key="dv_text_in",
                        height=340,

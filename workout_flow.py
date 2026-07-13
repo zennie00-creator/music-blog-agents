@@ -289,9 +289,11 @@ def run():
                 st.rerun()
         with col2:
             if st.session_state.get("wk_blog_prev"):
-                if st.button("↩️ 수정 전으로 되돌리기", use_container_width=True):
+                if st.button("↩️ 이전 버전과 바꾸기", use_container_width=True,
+                             help="수정 전/후 버전을 맞바꿉니다. 다시 누르면 원복됩니다."):
+                    cur = st.session_state.wk_blog
                     st.session_state.wk_blog = st.session_state.wk_blog_prev
-                    st.session_state.wk_blog_prev = ""
+                    st.session_state.wk_blog_prev = cur
                     st.rerun()
 
         st.write("")
