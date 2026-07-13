@@ -405,12 +405,26 @@ def _show_output():
         st.success("✅ Notion에 발행됨!")
         st.link_button("🔗 Notion에서 열기", st.session_state.wk_notion_url)
     else:
+        photos = st.file_uploader("📷 함께 올릴 운동 사진 (선택 · 여러 장 가능)",
+                                  accept_multiple_files=True,
+                                  type=["png", "jpg", "jpeg", "gif", "webp"],
+                                  key="wk_photos")
         if st.button("📝 Notion에 올리기", type="primary"):
             with st.spinner("Notion에 글을 만드는 중..."):
                 try:
+                    image_ids = []
+                    for f in (photos or []):
+                        try:
+                            image_ids.append(notion_agent.upload_image(
+                                f.getvalue(), f.name, f.type))
+                        except Exception as e:
+                            st.warning(f"사진 업로드 실패: {f.name} — {e}")
+                    first_sport = (st.session_state.wk_selected_list or [{}])[0].get("sport", "")
                     url = notion_agent.publish(
                         _title(), _summary_lines(), st.session_state.wk_blog,
-                        coach_text=st.session_state.get("wk_analysis", ""))
+                        coach_text=st.session_state.get("wk_analysis", ""),
+                        image_ids=image_ids,
+                        icon=workout_agent.sport_emoji(first_sport))
                     st.session_state.wk_notion_url = url
                     st.rerun()
                 except Exception as e:

@@ -68,6 +68,63 @@ def _quote(text):
             "quote": {"rich_text": _rich(text)}}
 
 
+def _bullet(text):
+    return {"object": "block", "type": "bulleted_list_item",
+            "bulleted_list_item": {"rich_text": _rich(text)}}
+
+
+def image_upload_block(file_upload_id):
+    """업로드한 파일을 이미지 블록으로."""
+    return {"object": "block", "type": "image",
+            "image": {"type": "file_upload",
+                      "file_upload": {"id": file_upload_id}}}
+
+
+def upload_image(data, filename, mime=None):
+    """이미지 파일을 Notion에 업로드하고 file_upload id를 반환한다. (20MB 이하)"""
+    r = requests.post(f"{API}/file_uploads", headers=_headers(),
+                      json={"mode": "single_part", "filename": filename},
+                      timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"업로드 준비 실패 {r.status_code}: {r.text[:200]}")
+    fid = r.json()["id"]
+    h = {"Authorization": f"Bearer {os.environ.get('NOTION_TOKEN','')}",
+         "Notion-Version": VERSION}
+    r2 = requests.post(f"{API}/file_uploads/{fid}/send", headers=h,
+                       files={"file": (filename, data, mime or "image/png")},
+                       timeout=60)
+    if r2.status_code >= 300:
+        raise RuntimeError(f"업로드 실패 {r2.status_code}: {r2.text[:200]}")
+    return fid
+
+
+def md_blocks(md_text):
+    """간단한 마크다운(#, ##, ###, -, >, ---)을 Notion 블록으로 변환."""
+    blocks = []
+    for raw in (md_text or "").splitlines():
+        s = raw.strip().replace("**", "")
+        if not s:
+            continue
+        if s.startswith("### "):
+            blocks.append({"object": "block", "type": "heading_3",
+                           "heading_3": {"rich_text": _rich(s[4:])}})
+        elif s.startswith("## "):
+            blocks.append({"object": "block", "type": "heading_2",
+                           "heading_2": {"rich_text": _rich(s[3:])}})
+        elif s.startswith("# "):
+            blocks.append({"object": "block", "type": "heading_1",
+                           "heading_1": {"rich_text": _rich(s[2:])}})
+        elif s in ("---", "___", "***"):
+            blocks.append(_divider())
+        elif s.startswith(("- ", "* ")):
+            blocks.append(_bullet(s[2:]))
+        elif s.startswith("> "):
+            blocks.append(_quote(s[2:]))
+        else:
+            blocks.append(_paragraph(s))
+    return blocks
+
+
 # 운동 소제목에 쓰이는 이모지 (이걸로 시작하는 한 줄은 소제목으로 본다)
 _HEADING_EMOJIS = "🏃🚶🚴🏊🏋️🧘🧗🎾⚽💪"
 
@@ -104,19 +161,66 @@ def _resolve_parent(pid):
     return "page", None
 
 
-def publish(title, summary_lines, body_text, coach_text=""):
-    """Notion에 글 한 편을 생성하고 URL을 반환한다.
+def create_page(title, children, parent_id=None, icon=None):
+    """Notion에 페이지를 만들고 URL을 반환한다.
 
-    coach_text: 코치 분석 원문 — 본문 아래 별도 영역(제목+인용)으로 들어간다.
+    parent_id : 지정하면 그 페이지/DB 아래에, 없으면 NOTION_PARENT_ID 사용
+    icon      : 이모지 아이콘 (예: '🏃')
+    children  : 블록 목록 (100개 초과 시 나눠서 추가)
     """
     if requests is None:
         raise RuntimeError("requests 모듈이 필요합니다.")
-    pid = _parent_id()
+    pid = (parent_id or _parent_id()).strip()
     kind, title_prop = _resolve_parent(pid)
 
+    first, rest = children[:90], children[90:]
+    if kind == "database":
+        payload = {
+            "parent": {"database_id": pid},
+            "properties": {title_prop: {"title": _rich(title)}},
+            "children": first,
+        }
+    else:
+        payload = {
+            "parent": {"page_id": pid},
+            "properties": {"title": {"title": _rich(title)}},
+            "children": first,
+        }
+    if icon:
+        payload["icon"] = {"type": "emoji", "emoji": icon}
+
+    r = requests.post(f"{API}/pages", headers=_headers(), json=payload, timeout=30)
+    if r.status_code >= 300 and icon:
+        # 일부 이모지는 아이콘으로 거부될 수 있어 아이콘 없이 재시도
+        payload.pop("icon", None)
+        r = requests.post(f"{API}/pages", headers=_headers(), json=payload, timeout=30)
+    if r.status_code >= 300:
+        raise RuntimeError(f"Notion API 오류 {r.status_code}: {r.text[:300]}")
+    res = r.json()
+
+    # 100블록 제한: 나머지는 이어서 추가
+    page_id = res.get("id")
+    while rest and page_id:
+        chunk, rest = rest[:90], rest[90:]
+        r2 = requests.patch(f"{API}/blocks/{page_id}/children",
+                            headers=_headers(), json={"children": chunk}, timeout=30)
+        if r2.status_code >= 300:
+            break  # 페이지는 이미 생성됨 — 남은 블록만 실패
+    return res.get("url", "")
+
+
+def publish(title, summary_lines, body_text, coach_text="",
+            image_ids=None, icon=None, parent_id=None):
+    """운동/음악 일지 형식으로 Notion 글을 생성하고 URL을 반환한다.
+
+    coach_text : 코치 분석 원문 — 본문 아래 별도 영역(제목+인용)
+    image_ids  : upload_image로 올린 파일 id 목록 — 요약 아래 이미지로 삽입
+    """
     children = []
     if summary_lines:
         children.append(_callout("\n".join(summary_lines)))
+    for fid in (image_ids or []):
+        children.append(image_upload_block(fid))
     children += _body_blocks(body_text)
 
     if coach_text and coach_text.strip():
@@ -126,20 +230,4 @@ def publish(title, summary_lines, body_text, coach_text=""):
             if para.strip():
                 children.append(_quote(para.strip()))
 
-    if kind == "database":
-        payload = {
-            "parent": {"database_id": pid},
-            "properties": {title_prop: {"title": _rich(title)}},
-            "children": children,
-        }
-    else:
-        payload = {
-            "parent": {"page_id": pid},
-            "properties": {"title": {"title": _rich(title)}},
-            "children": children,
-        }
-
-    r = requests.post(f"{API}/pages", headers=_headers(), json=payload, timeout=30)
-    if r.status_code >= 300:
-        raise RuntimeError(f"Notion API 오류 {r.status_code}: {r.text[:300]}")
-    return r.json().get("url", "")
+    return create_page(title, children, parent_id=parent_id, icon=icon)

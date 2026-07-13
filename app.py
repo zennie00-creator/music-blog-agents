@@ -4,11 +4,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import music_flow
 import workout_flow
+import devlog_flow
 import whoop_agent
 from core import profile as profile_store
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-09 · workout v4 (코치 한마디 발행 포함)"
+APP_VERSION = "2026-07-13 · v5 (개발일지 모드+사진 업로드)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="블로그 에이전트", page_icon="🎼", layout="centered")
@@ -114,6 +115,11 @@ with st.sidebar:
                 {"goals": goals, "sports": sports, "tone": tone, "notes": notes})
             st.success("저장됐습니다!")
 
+    elif st.session_state.mode == "devlog":
+        st.markdown("### 📓 개발 일지")
+        st.caption("발행 위치: Secrets의 NOTION_DEVLOG_PARENT_ID 페이지. "
+                   "없으면 운동일지와 같은 페이지(NOTION_PARENT_ID)로 올라갑니다.")
+
     else:  # 음악 모드 또는 모드 선택 화면
         st.markdown("### 🎧 나의 오디오 환경")
         st.caption("저장해두면 청취 가이드가 내 환경에 맞게 작성됩니다.")
@@ -136,23 +142,30 @@ with st.sidebar:
 # 모드 선택 화면
 # ══════════════════════════════════════════════════════════
 if st.session_state.mode is None:
-    st.title("🎼 블로그 에이전트")
-    st.caption("오늘 어떤 글을 써볼까요? 단계별로 함께 완성해 네이버 블로그에 올릴 수 있습니다.")
+    st.title("📔 일지 에이전트")
+    st.caption("오늘 어떤 글을 써볼까요? 완성한 글은 네이버·Notion에 올릴 수 있습니다.")
     st.divider()
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("### 🎼 음악 감상")
         st.caption("분위기·키워드로 음악을 고르고 감성 에세이를 씁니다.")
-        if st.button("음악 글쓰기 시작 →", type="primary", use_container_width=True):
+        if st.button("음악 글쓰기 →", type="primary", use_container_width=True):
             st.session_state.mode = "music"
             st.session_state.step = 0
             st.rerun()
     with col2:
         st.markdown("### 🏃 오늘 운동")
-        st.caption("Whoop 운동 기록에 나의 기분·몸 상태를 더해 운동 일지를 씁니다.")
-        if st.button("운동 일지 시작 →", type="primary", use_container_width=True):
+        st.caption("Whoop 기록에 나의 기분·몸 상태를 더해 운동 일지를 씁니다.")
+        if st.button("운동 일지 →", type="primary", use_container_width=True):
             st.session_state.mode = "workout"
             st.session_state.step = "w0"
+            st.rerun()
+    with col3:
+        st.markdown("### 📓 개발 일지")
+        st.caption("개발 메모를 다듬어 스크린샷과 함께 Notion에 올립니다.")
+        if st.button("개발 일지 →", type="primary", use_container_width=True):
+            st.session_state.mode = "devlog"
+            st.session_state.step = "d0"
             st.rerun()
 
 # ══════════════════════════════════════════════════════════
@@ -172,3 +185,12 @@ elif st.session_state.mode == "workout":
     st.caption("Whoop 데이터와 나의 느낌을 합쳐 운동 일지를 완성해 드립니다.")
     st.divider()
     workout_flow.run()
+
+# ══════════════════════════════════════════════════════════
+# 개발 일지 모드
+# ══════════════════════════════════════════════════════════
+elif st.session_state.mode == "devlog":
+    st.title("📓 개발 일지")
+    st.caption("개발 메모를 정리해 이미지와 함께 Notion에 발행합니다.")
+    st.divider()
+    devlog_flow.run()
