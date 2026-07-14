@@ -8,3 +8,6 @@ __pycache__/
 
 # Whoop OAuth 토큰 (절대 커밋 금지)
 .whoop_token.json
+
+# 세션 복구용 초안
+.draft_state.json

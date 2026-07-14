@@ -11,8 +11,21 @@ import whoop_agent
 import workout_agent
 import notion_agent
 from core import writer
+from core import draft
 from core.naver_html import build_naver_html, wrap_document
 from core import profile as profile_store
+
+# 네트워크 끊김 복구용으로 저장하는 세션 키들
+DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
+              "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
+              "wk_blog_prev", "wk_trend", "wk_coach_notes", "wk_whoop_note",
+              "wk_saved_html", "wk_notion_url")
+
+
+def _save_draft():
+    data = {k: st.session_state.get(k) for k in DRAFT_KEYS}
+    data["step"] = st.session_state.step
+    draft.save("workout", data)
 
 
 def _profile():
@@ -59,6 +72,11 @@ def _card(w, unscored=False):
 
 def run():
     step = st.session_state.step
+
+    # 진행 상태 자동 저장 — 네트워크가 끊겨 세션이 초기화돼도
+    # 대문의 '이어서 하기'로 복구할 수 있다
+    if st.session_state.get("wk_selected_list") or st.session_state.get("wk_workouts"):
+        _save_draft()
 
     # ── STEP w0: 운동 불러오기 + 멀티 선택 ───────────────────
     if step == "w0":
@@ -478,6 +496,7 @@ def _reset():
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
         st.session_state.pop(k, None)
+    draft.clear("workout")
     st.session_state.mode = None
     st.session_state.step = 0
     st.rerun()

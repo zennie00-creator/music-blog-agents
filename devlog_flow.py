@@ -14,6 +14,7 @@ import streamlit as st
 
 import notion_agent
 from core import writer
+from core import draft
 
 DEVLOG_PATH = os.path.join(os.path.dirname(__file__), "DEVLOG.md")
 
@@ -51,6 +52,16 @@ def run():
         st.session_state.pop("dv_text_in", None)
         st.session_state.pop("dv_text_prev", None)
         st.session_state.dv_url = ""
+        draft.clear("devlog")
+
+    # 진행 상태 자동 저장 (네트워크 끊김 복구용)
+    if (st.session_state.get("dv_text_in") or "").strip():
+        draft.save("devlog", {
+            "dv_text_in": st.session_state.dv_text_in,
+            "dv_text_prev": st.session_state.get("dv_text_prev", ""),
+            "dv_url": st.session_state.get("dv_url", ""),
+            "step": "d0",
+        })
 
     st.markdown('<div class="step-pill">📓 개발 일지</div>', unsafe_allow_html=True)
 
