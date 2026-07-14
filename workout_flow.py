@@ -267,14 +267,40 @@ def run():
         st.markdown('<div class="section-label">코치의 분석</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="content-box">{st.session_state.wk_analysis}</div>',
                     unsafe_allow_html=True)
+
+        # ── 코치에게 답장: 데이터에 없는 사실을 알려주면 재분석 ──
+        with st.expander("🗣 코치에게 답장하기 (데이터에 없는 사실 알려주기)"):
+            st.caption("예: '명상은 매일 15~20분 하고 있어요' / '금요일 회복도 급락은 회식 때문이에요'. "
+                       "코치가 이 정보를 반영해 분석을 다시 씁니다. (한 번 알려주면 계속 기억)")
+            coach_note = st.text_area("코치에게 전할 말", key="wk_coach_note_in")
+            if st.button("📨 전달하고 분석 다시 받기", disabled=not coach_note.strip()):
+                st.session_state.wk_coach_notes = (
+                    st.session_state.get("wk_coach_notes", "") + "\n" + coach_note).strip()
+                with st.spinner("코치가 답장을 반영해 다시 분석하는 중..."):
+                    st.session_state.wk_analysis = workout_agent.analyze_workout(
+                        st.session_state.wk_summary, prof,
+                        trend=st.session_state.get("wk_trend", ""),
+                        user_note=st.session_state.wk_coach_notes)
+                st.rerun()
+            if st.session_state.get("wk_coach_notes") and st.session_state.wk_blog:
+                if st.button("🔄 새 분석을 반영해 일지도 다시 쓰기"):
+                    st.session_state.wk_blog_prev = st.session_state.wk_blog
+                    with st.spinner("일지를 다시 쓰는 중..."):
+                        st.session_state.wk_blog = workout_agent.write_workout_blog(
+                            st.session_state.wk_summary, st.session_state.wk_analysis,
+                            st.session_state.wk_before, st.session_state.wk_body,
+                            st.session_state.wk_after, prof,
+                            n_workouts=len(st.session_state.wk_selected_list))
+                    st.rerun()
+
         st.write("")
         st.markdown('<div class="section-label">운동 일지 초안</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="content-box">{st.session_state.wk_blog}</div>',
                     unsafe_allow_html=True)
         st.write("")
 
-        st.caption("💡 종목명·거리 같은 '데이터'를 고치려면 아래 **← 데이터 다시 편집**으로 돌아가세요. "
-                   "여기 수정 요청은 '글의 문장'을 다듬는 용도예요.")
+        st.caption("💡 여기 수정 요청은 '운동 일지 글'만 다듬어요. 코치 분석을 바꾸려면 위의 "
+                   "**🗣 코치에게 답장하기**, 종목명·거리를 고치려면 아래 **← 데이터 다시 편집**을 쓰세요.")
         feedback = st.text_input("수정 요청 (없으면 비워두고 완성)", key="wk_fb",
             placeholder="예: 더 담백하게, 코치 조언을 짧게, 마무리를 다르게...")
         col1, col2 = st.columns(2)
@@ -436,7 +462,8 @@ def _show_output():
 def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
-              "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend"):
+              "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
+              "wk_coach_notes"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:

@@ -155,10 +155,12 @@ def stat_rows(workouts, recovery=None):
     return rows
 
 
-def analyze_workout(summary, profile=None, trend=""):
+def analyze_workout(summary, profile=None, trend="", user_note=""):
     """코치 관점에서 오늘 운동(들)을 해석한다 (초안).
 
-    trend: 최근 2주 운동·회복 숫자 요약 (whoop_agent.get_trend_summary).
+    trend     : 최근 2주 운동·회복 숫자 요약 (whoop_agent.get_trend_summary).
+    user_note : 운동한 사람이 코치에게 직접 전한 추가 정보/정정
+                (예: 명상 습관, 회복도 급락 원인). 데이터보다 우선한다.
     """
     goal = (profile or {}).get("goals", "")
     goal_line = f"이 사람의 운동 목표: {goal}" if goal else ""
@@ -168,11 +170,22 @@ def analyze_workout(summary, profile=None, trend=""):
 [최근 2주 운동·회복 추세]
 {trend}
 """
+    note_block = ""
+    if user_note and user_note.strip():
+        note_block = f"""
+[운동한 사람이 코치인 당신에게 직접 전한 말 — 반드시 반영]
+{user_note.strip()}
+
+위 내용은 데이터에 없는 사실이므로 데이터 해석보다 우선하세요.
+이전에 했을 법한 잘못된 가정(예: 안 하고 있는 습관을 권하기)을 바로잡고,
+본인이 알려준 사실을 존중해서 조언하세요. 이미 하고 있는 것을 새로 시작하라고
+권하지 마세요.
+"""
     prompt = f"""당신은 이 사람을 꾸준히 지켜봐 온 퍼스널 트레이너이자 운동 코치입니다.
 아래는 오늘 한 사람의 Whoop 운동 기록입니다. (여러 운동일 수 있습니다)
 
 {summary}
-{trend_block}
+{trend_block}{note_block}
 {goal_line}
 
 이 데이터를 2~3문단으로 해석해주세요:
