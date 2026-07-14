@@ -269,20 +269,30 @@ def run():
                     unsafe_allow_html=True)
 
         # ── 코치에게 답장: 데이터에 없는 사실을 알려주면 재분석 ──
-        with st.expander("🗣 코치에게 답장하기 (데이터에 없는 사실 알려주기)"):
+        with st.expander("🗣 코치에게 답장하기 (데이터에 없는 사실·Whoop 코치 의견 전달)"):
             st.caption("예: '명상은 매일 15~20분 하고 있어요' / '금요일 회복도 급락은 회식 때문이에요'. "
                        "코치가 이 정보를 반영해 분석을 다시 씁니다. (한 번 알려주면 계속 기억)")
             coach_note = st.text_area("코치에게 전할 말", key="wk_coach_note_in")
-            if st.button("📨 전달하고 분석 다시 받기", disabled=not coach_note.strip()):
-                st.session_state.wk_coach_notes = (
-                    st.session_state.get("wk_coach_notes", "") + "\n" + coach_note).strip()
+            whoop_note = st.text_area("📱 Whoop 앱 코치가 한 말 (선택 · 복사해서 붙여넣기)",
+                                      key="wk_whoop_note_in",
+                                      value=st.session_state.get("wk_whoop_note", ""),
+                                      placeholder="Whoop 앱의 코치 대화에서 참고할 만한 부분을 붙여넣으면, "
+                                                  "우리 코치가 동료 의견으로 참고해 보완합니다.")
+            if st.button("📨 전달하고 분석 다시 받기",
+                         disabled=not (coach_note.strip() or whoop_note.strip())):
+                if coach_note.strip():
+                    st.session_state.wk_coach_notes = (
+                        st.session_state.get("wk_coach_notes", "") + "\n" + coach_note).strip()
+                st.session_state.wk_whoop_note = whoop_note.strip()
                 with st.spinner("코치가 답장을 반영해 다시 분석하는 중..."):
                     st.session_state.wk_analysis = workout_agent.analyze_workout(
                         st.session_state.wk_summary, prof,
                         trend=st.session_state.get("wk_trend", ""),
-                        user_note=st.session_state.wk_coach_notes)
+                        user_note=st.session_state.get("wk_coach_notes", ""),
+                        whoop_note=st.session_state.wk_whoop_note)
                 st.rerun()
-            if st.session_state.get("wk_coach_notes") and st.session_state.wk_blog:
+            if ((st.session_state.get("wk_coach_notes") or st.session_state.get("wk_whoop_note"))
+                    and st.session_state.wk_blog):
                 if st.button("🔄 새 분석을 반영해 일지도 다시 쓰기"):
                     st.session_state.wk_blog_prev = st.session_state.wk_blog
                     with st.spinner("일지를 다시 쓰는 중..."):
@@ -463,7 +473,7 @@ def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
-              "wk_coach_notes"):
+              "wk_coach_notes", "wk_whoop_note"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
