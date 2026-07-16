@@ -103,8 +103,8 @@ def _one_workout_lines(w, idx=None, total=1):
     return lines
 
 
-def format_summary(workouts, recovery=None):
-    """운동(들) + 회복 데이터를 사람이 읽기 좋은 요약 텍스트로."""
+def format_summary(workouts, recovery=None, cycle=None):
+    """운동(들) + 회복/누적 데이터를 사람이 읽기 좋은 요약 텍스트로."""
     lines = []
     total = len(workouts)
     if total > 1:
@@ -112,21 +112,29 @@ def format_summary(workouts, recovery=None):
     for i, w in enumerate(workouts, 1):
         lines += _one_workout_lines(w, i, total)
         lines.append("")
+    rec = []
+    if cycle and cycle.get("day_strain") is not None:
+        rec.append(f"오늘 누적 Strain: {cycle['day_strain']}"
+                   f" ({cycle.get('as_of', '')} 집계 기준 — Whoop 공식 하루 누적치로,"
+                   f" 활동별 Strain의 단순 합산과 다름)")
     if recovery:
-        rec = []
         if recovery.get("recovery") is not None:
             rec.append(f"전일 회복도: {recovery['recovery']}%")
         if recovery.get("resting_hr"):
             rec.append(f"안정시 심박수: {recovery['resting_hr']} bpm")
         if recovery.get("hrv"):
             rec.append(f"HRV: {recovery['hrv']} ms")
-        if rec:
-            lines.append("[오늘 컨디션] " + " / ".join(rec))
+    if rec:
+        lines.append("[오늘 컨디션] " + " / ".join(rec))
     return "\n".join(lines).strip()
 
 
-def stat_rows(workouts, recovery=None):
-    """네이버 HTML 통계 카드용 (label, value) 목록 — 하루 합산 기준."""
+def stat_rows(workouts, recovery=None, cycle=None):
+    """네이버 HTML 통계 카드용 (label, value) 목록.
+
+    Strain은 활동별 합산이 하루 누적과 다르므로(로그 스케일),
+    cycle의 Day Strain이 있으면 그것을 집계 시각과 함께 쓴다.
+    """
     rows = []
     total_min = sum(w.get("duration_min") or 0 for w in workouts)
     total_kcal = sum(w.get("kcal") or 0 for w in workouts)
@@ -141,7 +149,11 @@ def stat_rows(workouts, recovery=None):
         rows.append(("운동 수", f"{len(workouts)}개"))
     if total_min:
         rows.append(("총 시간", f"{total_min}분"))
-    if strains:
+    if cycle and cycle.get("day_strain") is not None:
+        as_of = cycle.get("as_of", "")
+        label = f"누적 Strain ({as_of} 기준)" if as_of else "누적 Strain"
+        rows.append((label, cycle["day_strain"]))
+    elif strains:
         label = "최고 Strain" if len(workouts) > 1 else "Strain"
         rows.append((label, max(strains)))
     if total_km:

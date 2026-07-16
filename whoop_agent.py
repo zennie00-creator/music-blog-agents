@@ -273,6 +273,27 @@ def get_latest_recovery():
         return {}
 
 
+def get_current_cycle():
+    """현재(오늘) 사이클의 누적 Day Strain — 활동별 Strain 합산과 다른 Whoop 공식 값.
+
+    Strain은 로그 스케일이라 활동별 합산이 하루 누적보다 크게 나온다.
+    집계 시각(as_of)을 함께 반환해 '몇 시 기준'인지 표기할 수 있게 한다.
+    """
+    now = datetime.now(timezone.utc)
+    token = _valid_access_token()
+    if not token:
+        return {"day_strain": 15.2, "as_of": "16:00", "_mock": True}
+    try:
+        data = _get("/v2/cycle", token, {"limit": 1})
+        rec = (data.get("records") or [{}])[0]
+        s = (rec.get("score") or {}).get("strain")
+        tz = rec.get("timezone_offset")
+        as_of = _local_time(now.strftime("%Y-%m-%dT%H:%M:%SZ"), tz)[-5:]
+        return {"day_strain": round(s, 1) if s is not None else None, "as_of": as_of}
+    except Exception:
+        return {}
+
+
 def get_trend_summary(days=14):
     """최근 days일 운동·회복 추세를 압축 텍스트로 (LLM 비용 없음).
 

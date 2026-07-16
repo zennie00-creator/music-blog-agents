@@ -16,10 +16,10 @@ from core.naver_html import build_naver_html, wrap_document
 from core import profile as profile_store
 
 # 네트워크 끊김 복구용으로 저장하는 세션 키들
-DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
-              "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
-              "wk_blog_prev", "wk_trend", "wk_coach_notes", "wk_whoop_note",
-              "wk_saved_html", "wk_notion_url")
+DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list",
+              "wk_summary", "wk_before", "wk_body", "wk_after", "wk_analysis",
+              "wk_blog", "wk_blog_prev", "wk_trend", "wk_coach_notes",
+              "wk_whoop_note", "wk_saved_html", "wk_notion_url")
 
 
 def _save_draft():
@@ -107,6 +107,7 @@ def run():
                 with st.spinner("Whoop에서 데이터를 가져오는 중..."):
                     st.session_state.wk_workouts = whoop_agent.get_recent_workouts()
                     st.session_state.wk_recovery = whoop_agent.get_latest_recovery()
+                    st.session_state.wk_cycle = whoop_agent.get_current_cycle()
                 st.rerun()
             return
 
@@ -244,7 +245,8 @@ def run():
                 st.session_state.wk_body = body
                 st.session_state.wk_after = after
                 st.session_state.wk_summary = workout_agent.format_summary(
-                    finalized, st.session_state.wk_recovery)
+                    finalized, st.session_state.wk_recovery,
+                    st.session_state.get("wk_cycle"))
                 # 최근 2주 추세는 숫자 요약이라 LLM 비용이 거의 들지 않는다
                 if not st.session_state.get("wk_trend"):
                     st.session_state.wk_trend = whoop_agent.get_trend_summary()
@@ -270,9 +272,12 @@ def run():
 
         if not st.session_state.wk_analysis:
             with st.spinner("코치가 최근 추세와 함께 오늘 운동을 분석하는 중..."):
+                # 데이터 수정 후 재분석해도 코치에게 답장한 내용은 계속 기억
                 st.session_state.wk_analysis = workout_agent.analyze_workout(
                     st.session_state.wk_summary, prof,
-                    trend=st.session_state.get("wk_trend", ""))
+                    trend=st.session_state.get("wk_trend", ""),
+                    user_note=st.session_state.get("wk_coach_notes") or "",
+                    whoop_note=st.session_state.get("wk_whoop_note") or "")
             st.rerun()
 
         if not st.session_state.wk_blog:
@@ -373,6 +378,7 @@ def _summary_lines():
     """제목 아래 들어갈 운동 요약 줄 목록 (붙여넣기·Notion 공용)."""
     chosen = st.session_state.wk_selected_list
     rec = st.session_state.wk_recovery
+    cyc = st.session_state.get("wk_cycle") or {}
     lines = []
     if len(chosen) > 1:
         for w in chosen:
@@ -380,10 +386,16 @@ def _summary_lines():
             zl = workout_agent.zone_line(w)
             if zl:
                 lines.append(f"   🫀 {zl}")
+        day_parts = []
+        if cyc.get("day_strain") is not None:
+            as_of = f" ({cyc.get('as_of','')} 기준)" if cyc.get("as_of") else ""
+            day_parts.append(f"누적 Strain {cyc['day_strain']}{as_of}")
         if rec.get("recovery") is not None:
-            lines.append(f"📊 전일 회복도 {rec['recovery']}%")
+            day_parts.append(f"전일 회복도 {rec['recovery']}%")
+        if day_parts:
+            lines.append("📊 " + " · ".join(day_parts))
     else:
-        rows = workout_agent.stat_rows(chosen, rec)
+        rows = workout_agent.stat_rows(chosen, rec, cyc)
         stat_line = " · ".join(f"{label} {value}" for label, value in rows)
         if stat_line:
             lines.append(f"📊 {stat_line}")
@@ -420,7 +432,7 @@ def _save_and_show():
         title=f"오늘의 운동 — {sports}",
         subtitle=f"총 {total_min}분 · {len(chosen)}개 세션" if len(chosen) > 1
                  else f"{total_min}분",
-        stat_rows=workout_agent.stat_rows(chosen, rec),
+        stat_rows=workout_agent.stat_rows(chosen, rec, st.session_state.get("wk_cycle")),
         body_text=st.session_state.wk_blog,
         footer_box=("🧑‍🏫 코치의 한마디",
                     (st.session_state.get("wk_analysis") or "").strip()),
@@ -490,7 +502,7 @@ def _show_output():
 
 
 def _reset():
-    for k in ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
+    for k in ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
               "wk_coach_notes", "wk_whoop_note"):
