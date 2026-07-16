@@ -23,7 +23,9 @@ DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_selected_list", "wk_summary",
 
 
 def _save_draft():
-    data = {k: st.session_state.get(k) for k in DRAFT_KEYS}
+    # None(미입력) 값은 저장하지 않는다 — 복구 시 위젯에 None이 들어가면 오류
+    data = {k: v for k in DRAFT_KEYS
+            if (v := st.session_state.get(k)) is not None}
     data["step"] = st.session_state.step
     draft.save("workout", data)
 
@@ -205,14 +207,14 @@ def run():
         st.markdown("**오늘의 기분·몸 상태** (비워도 됩니다. 적으면 훨씬 생생한 일지가 됩니다)")
         # 3단계에 갔다가 돌아와도 이전에 쓴 내용이 유지되도록 저장값을 기본값으로
         before = st.text_area("운동 전 기분/컨디션", key="wk_before_in",
-                              value=st.session_state.get("wk_before", ""),
-                              placeholder="예: 아침부터 몸이 무거웠는데 그래도 나가보자 싶었다")
+                              value=st.session_state.get("wk_before") or "",
+                              placeholder="예: 아침부터 몸이 무거웠는데 그래도 나가보자 싶었다") or ""
         body = st.text_area("운동 중·후 몸 상태", key="wk_body_in",
-                            value=st.session_state.get("wk_body", ""),
-                            placeholder="예: 초반엔 뻑뻑했는데 30분 지나니 리듬이 붙었다. 오른쪽 무릎 살짝 뻐근")
+                            value=st.session_state.get("wk_body") or "",
+                            placeholder="예: 초반엔 뻑뻑했는데 30분 지나니 리듬이 붙었다. 오른쪽 무릎 살짝 뻐근") or ""
         after = st.text_area("운동 후 기분", key="wk_after_in",
-                             value=st.session_state.get("wk_after", ""),
-                             placeholder="예: 땀 흘리고 나니 머리가 맑아지고 개운했다")
+                             value=st.session_state.get("wk_after") or "",
+                             placeholder="예: 땀 흘리고 나니 머리가 맑아지고 개운했다") or ""
 
         col1, col2 = st.columns(2)
         with col1:
@@ -290,17 +292,17 @@ def run():
         with st.expander("🗣 코치에게 답장하기 (데이터에 없는 사실·Whoop 코치 의견 전달)"):
             st.caption("예: '명상은 매일 15~20분 하고 있어요' / '금요일 회복도 급락은 회식 때문이에요'. "
                        "코치가 이 정보를 반영해 분석을 다시 씁니다. (한 번 알려주면 계속 기억)")
-            coach_note = st.text_area("코치에게 전할 말", key="wk_coach_note_in")
+            coach_note = st.text_area("코치에게 전할 말", key="wk_coach_note_in") or ""
             whoop_note = st.text_area("📱 Whoop 앱 코치가 한 말 (선택 · 복사해서 붙여넣기)",
                                       key="wk_whoop_note_in",
-                                      value=st.session_state.get("wk_whoop_note", ""),
+                                      value=st.session_state.get("wk_whoop_note") or "",
                                       placeholder="Whoop 앱의 코치 대화에서 참고할 만한 부분을 붙여넣으면, "
-                                                  "우리 코치가 동료 의견으로 참고해 보완합니다.")
+                                                  "우리 코치가 동료 의견으로 참고해 보완합니다.") or ""
             if st.button("📨 전달하고 분석 다시 받기",
                          disabled=not (coach_note.strip() or whoop_note.strip())):
                 if coach_note.strip():
                     st.session_state.wk_coach_notes = (
-                        st.session_state.get("wk_coach_notes", "") + "\n" + coach_note).strip()
+                        (st.session_state.get("wk_coach_notes") or "") + "\n" + coach_note).strip()
                 st.session_state.wk_whoop_note = whoop_note.strip()
                 with st.spinner("코치가 답장을 반영해 다시 분석하는 중..."):
                     st.session_state.wk_analysis = workout_agent.analyze_workout(

@@ -10,7 +10,7 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-13 · v10 (끊김 복구: 이어서 하기)"
+APP_VERSION = "2026-07-13 · v11 (복구 안정화)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="블로그 에이전트", page_icon="🎼", layout="centered")
@@ -145,7 +145,7 @@ with st.sidebar:
 def _resume_draft(mode_name, d):
     """저장된 초안을 세션에 복원하고 해당 모드로 진입한다."""
     for k, v in d.items():
-        if k.startswith(("wk_", "dv_")):
+        if k.startswith(("wk_", "dv_")) and v is not None:
             st.session_state[k] = v
     st.session_state.mode = mode_name
     default_step = "w0" if mode_name == "workout" else "d0"
