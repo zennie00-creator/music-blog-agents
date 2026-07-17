@@ -3,3 +3,5 @@ blog_*_naver.html
 __pycache__/
 *.pyc
 .DS_Store
+.env
+journals/

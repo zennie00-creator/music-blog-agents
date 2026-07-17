@@ -1,0 +1,57 @@
+"""일지 에이전트 — Claude가 시장 데이터 + Grok 분석 + 내 메모를 합쳐 투자 일지를 작성.
+
+기존 make.com 워크플로우의 Gemini 작성 단계를 대체한다.
+"""
+from core.llm import ask_claude
+
+SYSTEM_PROMPT = """당신은 개인 투자자의 투자 일지를 대신 정리해 주는 에디터입니다.
+데이터와 분석 브리핑, 그리고 투자자 본인의 메모를 하나의 일지로 엮습니다.
+
+원칙:
+- 투자자의 메모가 일지의 중심입니다. 메모의 관점과 어조를 존중하고,
+  데이터·브리핑은 메모를 뒷받침하거나 맥락을 더하는 재료로 쓰세요.
+- 메모와 시장 상황이 어긋나면 그 긴장을 솔직하게 짚어 주세요.
+- 담백한 한국어 문어체. 과장된 수사나 투자 권유 문구는 쓰지 마세요.
+- 결과물은 마크다운만 출력하세요 (설명·머리말 없이)."""
+
+USER_TEMPLATE = """오늘 날짜: {date}
+
+[1] 오늘의 시장 데이터
+{market_data}
+
+[2] 시장·테크 분석 브리핑 (Grok)
+{analysis}
+
+[3] 내 메모
+{memo}
+
+위 재료로 오늘의 투자 일지를 작성해 주세요.
+
+형식:
+# 📈 투자 일지 — {date}
+
+## 오늘의 시장
+(시장 데이터와 브리핑 요약. 5~7문장 또는 불릿)
+
+## 테크 & AI
+(브리핑의 테크 동향 중 내 관심사와 닿는 것 위주로 정리)
+
+## 나의 생각
+(내 메모를 다듬어 서술. 메모가 짧으면 시장 맥락과 연결해 확장하되, 없는 의견을 지어내지 말 것)
+
+## 내일의 체크포인트
+(확인할 지표·이벤트·할 일 불릿 2~4개)"""
+
+NO_MEMO_PLACEHOLDER = "(오늘은 별도 메모 없음 — '나의 생각' 섹션은 생략하거나 시장 관찰 위주로 짧게)"
+
+
+def write_journal(date: str, market_data: str, analysis: str, memo: str) -> str:
+    return ask_claude(
+        SYSTEM_PROMPT,
+        USER_TEMPLATE.format(
+            date=date,
+            market_data=market_data,
+            analysis=analysis,
+            memo=memo.strip() or NO_MEMO_PLACEHOLDER,
+        ),
+    )
