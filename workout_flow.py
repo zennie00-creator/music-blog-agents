@@ -338,7 +338,7 @@ def run():
                    "**🗣 코치에게 답장하기**, 종목명·거리를 고치려면 아래 **← 데이터 다시 편집**을 쓰세요.")
         feedback = st.text_input("수정 요청 (없으면 비워두고 완성)", key="wk_fb",
             placeholder="예: 더 담백하게, 코치 조언을 짧게, 마무리를 다르게...")
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
             if st.button("✏️ 수정 요청", disabled=not feedback.strip(),
                          use_container_width=True):
@@ -349,6 +349,14 @@ def run():
                         "운동 일지", st.session_state.wk_blog, feedback, f"운동: {sports}")
                 st.rerun()
         with col2:
+            if st.button("🪄 더 자연스럽게", use_container_width=True,
+                         help="내용은 그대로 두고, AI가 쓴 티가 나는 문체만 걷어냅니다."):
+                with st.spinner("어색한 문장을 다듬는 중..."):
+                    st.session_state.wk_blog_prev = st.session_state.wk_blog
+                    st.session_state.wk_blog = workout_agent.naturalize(
+                        st.session_state.wk_blog)
+                st.rerun()
+        with col3:
             if st.session_state.get("wk_blog_prev"):
                 if st.button("↩️ 이전 버전과 바꾸기", use_container_width=True,
                              help="수정 전/후 버전을 맞바꿉니다. 다시 누르면 원복됩니다."):
