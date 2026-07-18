@@ -63,7 +63,7 @@ def run():
             "step": "d0",
         })
 
-    st.markdown('<div class="step-pill">📓 개발 일지</div>', unsafe_allow_html=True)
+    st.markdown('<div class="step-pill">개발 일지 쓰기</div>', unsafe_allow_html=True)
 
     if not notion_agent.has_credentials():
         st.info("Notion 발행에는 NOTION_TOKEN / NOTION_PARENT_ID 설정이 필요합니다. "
