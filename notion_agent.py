@@ -322,17 +322,25 @@ def save_settings(data):
 
 
 def publish(title, summary_lines, body_text, coach_text="",
-            image_ids=None, icon=None, parent_id=None):
+            image_ids=None, icon=None, parent_id=None, data_sections=None):
     """운동/음악 일지 형식으로 Notion 글을 생성하고 URL을 반환한다.
 
-    coach_text : 코치 분석 원문 — 본문 아래 별도 영역(제목+인용)
-    image_ids  : upload_image로 올린 파일 id 목록 — 요약 아래 이미지로 삽입
+    coach_text    : 코치 분석 원문 — 본문 아래 별도 영역(제목+인용)
+    image_ids     : upload_image로 올린 파일 id 목록 — 요약 아래 이미지로 삽입
+    data_sections : [(제목, [줄, ...]), ...] — 요약 아래 별도 데이터 섹션
+                    (예: 심박존 체류시간). 소제목 + 글머리표로 렌더링.
     """
     children = []
     if summary_lines:
         children.append(_callout("\n".join(summary_lines)))
     for fid in (image_ids or []):
         children.append(image_upload_block(fid))
+    for sec_title, sec_lines in (data_sections or []):
+        if not sec_lines:
+            continue
+        children.append(_heading(sec_title))
+        for ln in sec_lines:
+            children.append(_bullet(ln))
     children += _body_blocks(body_text)
 
     if coach_text and coach_text.strip():

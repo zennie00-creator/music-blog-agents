@@ -265,9 +265,12 @@ def run():
         st.markdown('<div class="section-label">오늘의 운동 데이터</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="content-box">{st.session_state.wk_summary}</div>',
                     unsafe_allow_html=True)
-        zone_bars = "".join(_zone_bar_html(w) for w in st.session_state.wk_selected_list)
-        if zone_bars:
-            st.markdown(zone_bars, unsafe_allow_html=True)
+        # 유산소는 존별 상세 표, 그 외는 누적 막대 (화면 = 발행물과 동일)
+        zone_html = ""
+        for w in st.session_state.wk_selected_list:
+            zone_html += _zone_table_html(w) or _zone_bar_html(w)
+        if zone_html:
+            st.markdown(zone_html, unsafe_allow_html=True)
         st.write("")
 
         if not st.session_state.wk_analysis:
@@ -386,8 +389,12 @@ def run():
             _show_output()
 
 
-def _summary_lines():
-    """제목 아래 들어갈 운동 요약 줄 목록 (붙여넣기·Notion 공용)."""
+def _summary_lines(with_zones=True):
+    """제목 아래 들어갈 운동 요약 줄 목록 (붙여넣기·Notion 공용).
+
+    with_zones : 심박존 체류시간 줄을 포함할지. Notion은 별도 네이티브
+                 섹션으로 존을 넣으므로 False로 호출해 중복을 피한다.
+    """
     chosen = st.session_state.wk_selected_list
     rec = st.session_state.wk_recovery
     cyc = st.session_state.get("wk_cycle") or {}
@@ -396,7 +403,8 @@ def _summary_lines():
         for w in chosen:
             lines.append(workout_agent.workout_line(w))
             # 유산소는 존별 분·비율 상세, 그 외는 한 줄 요약
-            lines += workout_agent.zone_text_block(w, indent="   ")
+            if with_zones:
+                lines += workout_agent.zone_text_block(w, indent="   ")
         day_parts = []
         if cyc.get("day_strain") is not None:
             as_of = f" ({cyc.get('as_of','')} 기준)" if cyc.get("as_of") else ""
@@ -410,40 +418,62 @@ def _summary_lines():
         stat_line = " · ".join(f"{label} {value}" for label, value in rows)
         if stat_line:
             lines.append(f"📊 {stat_line}")
-        if chosen:
+        if with_zones and chosen:
             lines += workout_agent.zone_text_block(chosen[0])
     return lines
 
 
+def _zone_table_html(w, title_color="#888"):
+    """유산소 운동 1건의 심박존 체류시간 막대 표 HTML (화면·네이버 공용).
+
+    유산소가 아니거나 존 데이터가 없으면 빈 문자열.
+    """
+    if not workout_agent.is_cardio(w.get("sport")):
+        return ""
+    bd = workout_agent.zone_breakdown(w)
+    if not bd:
+        return ""
+    rows = ""
+    for k, label, mins, pct in bd:
+        color = workout_agent.ZONE_COLORS.get(k, "#a9bf88")
+        rows += (
+            '<tr>'
+            f'<td style="padding:3px 10px 3px 0;font-size:12.5px;color:#7c8a6c;'
+            f'white-space:nowrap;">{label}</td>'
+            '<td style="width:100%;padding:3px 0;">'
+            '<div style="background:#f0f2ea;border-radius:5px;overflow:hidden;">'
+            f'<div style="width:{pct}%;background:{color};height:12px;"></div></div></td>'
+            f'<td style="padding:3px 0 3px 10px;font-size:12.5px;color:#7c8a6c;'
+            f'text-align:right;white-space:nowrap;">{mins}분 · {pct}%</td>'
+            '</tr>')
+    title = (f"{workout_agent.sport_emoji(w.get('sport'))} "
+             f"{w.get('sport','')} — 심박존 체류시간")
+    return (
+        '<div style="margin:0 0 20px;">'
+        f'<p style="font-size:13px;color:{title_color};margin:0 0 6px;">{title}</p>'
+        f'<table style="width:100%;border-collapse:collapse;">{rows}</table></div>')
+
+
 def _naver_zone_html():
-    """유산소 운동의 심박존 체류시간을 네이버 HTML 막대 표로."""
-    blocks = ""
+    """유산소 운동들의 심박존 체류시간을 네이버 HTML 막대 표로."""
+    return "".join(_zone_table_html(w) for w in st.session_state.wk_selected_list)
+
+
+def _zone_sections_for_notion():
+    """Notion 네이티브 블록용 (제목, [줄]) 섹션 목록 — 유산소만."""
+    sections = []
     for w in st.session_state.wk_selected_list:
         if not workout_agent.is_cardio(w.get("sport")):
             continue
         bd = workout_agent.zone_breakdown(w)
         if not bd:
             continue
-        rows = ""
-        for k, label, mins, pct in bd:
-            color = workout_agent.ZONE_COLORS.get(k, "#a9bf88")
-            rows += (
-                '<tr>'
-                f'<td style="padding:3px 10px 3px 0;font-size:12.5px;color:#666;'
-                f'white-space:nowrap;">{label}</td>'
-                '<td style="width:100%;padding:3px 0;">'
-                '<div style="background:#f0f2ea;border-radius:5px;overflow:hidden;">'
-                f'<div style="width:{pct}%;background:{color};height:12px;"></div></div></td>'
-                f'<td style="padding:3px 0 3px 10px;font-size:12.5px;color:#666;'
-                f'text-align:right;white-space:nowrap;">{mins}분 · {pct}%</td>'
-                '</tr>')
-        title = (f"{workout_agent.sport_emoji(w.get('sport'))} "
-                 f"{w.get('sport','')} — 심박존 체류시간")
-        blocks += (
-            '<div style="margin:0 0 20px;">'
-            f'<p style="font-size:13px;color:#888;margin:0 0 6px;">{title}</p>'
-            f'<table style="width:100%;border-collapse:collapse;">{rows}</table></div>')
-    return blocks
+        heading = (f"{workout_agent.sport_emoji(w.get('sport'))} "
+                   f"{w.get('sport','')} — 심박존 체류시간")
+        lines = [f"{label}  {mins}분 · {pct}%  {workout_agent._text_bar(pct)}"
+                 for _k, label, mins, pct in bd]
+        sections.append((heading, lines))
+    return sections
 
 
 def _title():
@@ -556,10 +586,12 @@ def _show_output():
                             st.warning(f"사진 업로드 실패: {f.name} — {e}")
                     first_sport = (st.session_state.wk_selected_list or [{}])[0].get("sport", "")
                     url = notion_agent.publish(
-                        _title(), _summary_lines(), st.session_state.wk_blog,
+                        _title(), _summary_lines(with_zones=False),
+                        st.session_state.wk_blog,
                         coach_text=st.session_state.get("wk_analysis", ""),
                         image_ids=image_ids,
-                        icon=workout_agent.sport_emoji(first_sport))
+                        icon=workout_agent.sport_emoji(first_sport),
+                        data_sections=_zone_sections_for_notion())
                     st.session_state.wk_notion_url = url
                     st.rerun()
                 except Exception as e:
