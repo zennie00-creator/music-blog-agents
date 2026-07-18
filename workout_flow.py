@@ -295,7 +295,8 @@ def run():
 
         # ── 코치에게 답장: 데이터에 없는 사실을 알려주면 재분석 ──
         with st.expander("🗣 코치에게 답장하기 (데이터에 없는 사실·Whoop 코치 의견 전달)"):
-            st.caption("예: '명상은 매일 15~20분 하고 있어요' / '금요일 회복도 급락은 회식 때문이에요'. "
+            st.caption("예: '명상은 매일 15~20분 하고 있어요' / '금요일 회복도 급락은 회식 때문이에요' / "
+                       "'Whoop 앱 기준 VO2Max 42예요' (VO2Max는 API로 안 와서 직접 알려줘야 합니다). "
                        "코치가 이 정보를 반영해 분석을 다시 씁니다. (한 번 알려주면 계속 기억)")
             coach_note = st.text_area("코치에게 전할 말", key="wk_coach_note_in") or ""
             whoop_note = st.text_area("📱 Whoop 앱 코치가 한 말 (선택 · 복사해서 붙여넣기)",
@@ -394,9 +395,8 @@ def _summary_lines():
     if len(chosen) > 1:
         for w in chosen:
             lines.append(workout_agent.workout_line(w))
-            zl = workout_agent.zone_line(w)
-            if zl:
-                lines.append(f"   🫀 {zl}")
+            # 유산소는 존별 분·비율 상세, 그 외는 한 줄 요약
+            lines += workout_agent.zone_text_block(w, indent="   ")
         day_parts = []
         if cyc.get("day_strain") is not None:
             as_of = f" ({cyc.get('as_of','')} 기준)" if cyc.get("as_of") else ""
@@ -410,10 +410,40 @@ def _summary_lines():
         stat_line = " · ".join(f"{label} {value}" for label, value in rows)
         if stat_line:
             lines.append(f"📊 {stat_line}")
-        zl = workout_agent.zone_line(chosen[0]) if chosen else ""
-        if zl:
-            lines.append(f"🫀 {zl}")
+        if chosen:
+            lines += workout_agent.zone_text_block(chosen[0])
     return lines
+
+
+def _naver_zone_html():
+    """유산소 운동의 심박존 체류시간을 네이버 HTML 막대 표로."""
+    blocks = ""
+    for w in st.session_state.wk_selected_list:
+        if not workout_agent.is_cardio(w.get("sport")):
+            continue
+        bd = workout_agent.zone_breakdown(w)
+        if not bd:
+            continue
+        rows = ""
+        for k, label, mins, pct in bd:
+            color = workout_agent.ZONE_COLORS.get(k, "#a9bf88")
+            rows += (
+                '<tr>'
+                f'<td style="padding:3px 10px 3px 0;font-size:12.5px;color:#666;'
+                f'white-space:nowrap;">{label}</td>'
+                '<td style="width:100%;padding:3px 0;">'
+                '<div style="background:#f0f2ea;border-radius:5px;overflow:hidden;">'
+                f'<div style="width:{pct}%;background:{color};height:12px;"></div></div></td>'
+                f'<td style="padding:3px 0 3px 10px;font-size:12.5px;color:#666;'
+                f'text-align:right;white-space:nowrap;">{mins}분 · {pct}%</td>'
+                '</tr>')
+        title = (f"{workout_agent.sport_emoji(w.get('sport'))} "
+                 f"{w.get('sport','')} — 심박존 체류시간")
+        blocks += (
+            '<div style="margin:0 0 20px;">'
+            f'<p style="font-size:13px;color:#888;margin:0 0 6px;">{title}</p>'
+            f'<table style="width:100%;border-collapse:collapse;">{rows}</table></div>')
+    return blocks
 
 
 def _title():
@@ -444,6 +474,7 @@ def _save_and_show():
         subtitle=f"총 {total_min}분 · {len(chosen)}개 세션" if len(chosen) > 1
                  else f"{total_min}분",
         stat_rows=workout_agent.stat_rows(chosen, rec, st.session_state.get("wk_cycle")),
+        extra_html=_naver_zone_html(),
         body_text=st.session_state.wk_blog,
         footer_box=("🧑‍🏫 코치의 한마디",
                     (st.session_state.get("wk_analysis") or "").strip()),
