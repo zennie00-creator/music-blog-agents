@@ -19,7 +19,7 @@ from core import profile as profile_store
 DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list",
               "wk_summary", "wk_before", "wk_body", "wk_after", "wk_analysis",
               "wk_blog", "wk_blog_prev", "wk_trend", "wk_coach_notes",
-              "wk_whoop_note", "wk_saved_html", "wk_notion_url")
+              "wk_whoop_note", "wk_saved_html", "wk_notion_url", "wk_style_fb")
 
 
 def _save_draft():
@@ -347,6 +347,9 @@ def run():
                     st.session_state.wk_blog_prev = st.session_state.wk_blog  # 되돌리기용 백업
                     st.session_state.wk_blog = writer.revise_with_feedback(
                         "운동 일지", st.session_state.wk_blog, feedback, f"운동: {sports}")
+                    # 완성 시점에 문체 취향으로 추려서 기억하기 위해 모아둔다
+                    st.session_state.wk_style_fb = (
+                        (st.session_state.get("wk_style_fb") or []) + [feedback.strip()])
                 st.rerun()
         with col2:
             if st.button("🪄 더 자연스럽게", use_container_width=True,
@@ -450,6 +453,29 @@ def _save_and_show():
         f.write(_plain_text())
     st.session_state.wk_saved_html = naver_html
     st.success("💾 저장 완료!")
+    _learn_style()
+
+
+def _learn_style():
+    """이번 세션의 수정 요청들에서 문체 취향을 추려 프로필에 누적한다.
+
+    완성 시점에 한 번만, 가벼운 모델로 실행 — 다음 일지부터 프롬프트에
+    짧은 목록(400자 이내)으로 주입되므로 토큰 부담이 거의 없다.
+    """
+    fbs = [f for f in (st.session_state.get("wk_style_fb") or []) if f.strip()]
+    if not fbs:
+        return
+    prof = _profile()
+    old = (prof.get("style_memory") or "").strip()
+    with st.spinner("이번 수정 요청에서 문체 취향을 배우는 중..."):
+        merged = workout_agent.update_style_memory(old, fbs).strip()
+    st.session_state.wk_style_fb = []
+    if not merged or "아직 없음" in merged or merged == old:
+        return
+    prof["style_memory"] = merged
+    profile_store.save(profile_store.WORKOUT_PROFILE, prof)
+    st.caption("🧠 문체 취향을 기억해 뒀어요 — 다음 일지부터 자동 반영됩니다. "
+               "(사이드바 프로필에서 확인·수정 가능)")
 
 
 def _show_output():
@@ -513,7 +539,7 @@ def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
-              "wk_coach_notes", "wk_whoop_note"):
+              "wk_coach_notes", "wk_whoop_note", "wk_style_fb"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:

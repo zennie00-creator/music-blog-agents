@@ -11,6 +11,7 @@
 자격증명이 없으면 has_credentials()가 False를 반환해 버튼이 비활성화된다.
 """
 import os
+import json
 
 try:
     import requests
@@ -207,6 +208,117 @@ def create_page(title, children, parent_id=None, icon=None):
         if r2.status_code >= 300:
             break  # 페이지는 이미 생성됨 — 남은 블록만 실패
     return res.get("url", "")
+
+
+# ── 설정 저장소 (프로필·문체 취향 영구 보관) ─────────────────────────
+# Streamlit Cloud는 재부팅하면 로컬 파일이 사라진다. 그래서 설정 JSON을
+# Notion 페이지의 코드 블록에 보관해 두고, 재부팅 후에 되살린다.
+
+SETTINGS_TITLE = "일지 에이전트 설정"
+_settings_loc = None  # (page_id, code_block_id) 캐시 — 프로세스당 검색 1회
+
+
+def has_settings_credentials():
+    return requests is not None and bool(os.environ.get("NOTION_TOKEN"))
+
+
+def _rich_long(text):
+    """rich_text 조각당 2000자 제한을 피해 여러 조각으로 나눈다."""
+    return ([{"type": "text", "text": {"content": text[i:i + 2000]}}
+             for i in range(0, len(text), 2000)] or _rich(""))
+
+
+def _find_settings():
+    """설정 페이지의 (page_id, code_block_id)를 찾는다. 없으면 (None, None)."""
+    global _settings_loc
+    if _settings_loc:
+        return _settings_loc
+    r = requests.post(f"{API}/search", headers=_headers(),
+                      json={"query": SETTINGS_TITLE,
+                            "filter": {"value": "page", "property": "object"},
+                            "page_size": 20}, timeout=20)
+    if r.status_code >= 300:
+        return (None, None)
+    for res in r.json().get("results", []):
+        title = ""
+        for p in (res.get("properties") or {}).values():
+            if p.get("type") == "title":
+                title = "".join(t.get("plain_text", "") for t in p.get("title", []))
+        if title.strip() != SETTINGS_TITLE:
+            continue
+        rb = requests.get(f"{API}/blocks/{res['id']}/children?page_size=50",
+                          headers=_headers(), timeout=20)
+        for b in rb.json().get("results", []):
+            if b.get("type") == "code":
+                _settings_loc = (res["id"], b["id"])
+                return _settings_loc
+    return (None, None)
+
+
+def load_settings():
+    """Notion에 백업된 설정 dict를 반환. 없거나 실패하면 None."""
+    if not has_settings_credentials():
+        return None
+    try:
+        _page_id, code_id = _find_settings()
+        if not code_id:
+            return None
+        r = requests.get(f"{API}/blocks/{code_id}", headers=_headers(), timeout=20)
+        if r.status_code >= 300:
+            return None
+        texts = r.json().get("code", {}).get("rich_text", [])
+        raw = "".join(t.get("plain_text", "") for t in texts)
+        return json.loads(raw) if raw.strip() else {}
+    except Exception:
+        return None
+
+
+def save_settings(data):
+    """설정 dict를 Notion 설정 페이지에 저장. 성공하면 True."""
+    if not has_settings_credentials():
+        return False
+    try:
+        payload = json.dumps(data, ensure_ascii=False, indent=2)
+        _page_id, code_id = _find_settings()
+        if code_id:
+            r = requests.patch(f"{API}/blocks/{code_id}", headers=_headers(),
+                               json={"code": {"rich_text": _rich_long(payload)}},
+                               timeout=20)
+            return r.status_code < 300
+        # 설정 페이지가 아직 없으면 새로 만든다 (검색 인덱싱이 늦을 수 있어
+        # 방금 만든 페이지의 블록 id를 바로 캐시해 둔다)
+        pid = _parent_id()
+        if not pid:
+            return False
+        kind, title_prop = _resolve_parent(pid)
+        children = [
+            _paragraph("일지 에이전트가 프로필과 문체 취향을 보관하는 페이지입니다. "
+                       "삭제하면 설정이 초기화됩니다."),
+            {"object": "block", "type": "code",
+             "code": {"rich_text": _rich_long(payload), "language": "json"}},
+        ]
+        if kind == "database":
+            body = {"parent": {"database_id": pid},
+                    "properties": {title_prop: {"title": _rich(SETTINGS_TITLE)}}}
+        else:
+            body = {"parent": {"page_id": pid},
+                    "properties": {"title": {"title": _rich(SETTINGS_TITLE)}}}
+        body["children"] = children
+        body["icon"] = {"type": "emoji", "emoji": "⚙️"}
+        r = requests.post(f"{API}/pages", headers=_headers(), json=body, timeout=30)
+        if r.status_code >= 300:
+            return False
+        new_id = r.json().get("id")
+        rb = requests.get(f"{API}/blocks/{new_id}/children?page_size=20",
+                          headers=_headers(), timeout=20)
+        global _settings_loc
+        for b in rb.json().get("results", []):
+            if b.get("type") == "code":
+                _settings_loc = (new_id, b["id"])
+                break
+        return True
+    except Exception:
+        return False
 
 
 def publish(title, summary_lines, body_text, coach_text="",

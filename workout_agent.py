@@ -248,6 +248,13 @@ def write_workout_blog(summary, analysis, before, body, after, profile=None,
     """데이터 + 코치 분석 + 나의 주관적 느낌을 하나의 운동 일지로 엮는다."""
     tone = (profile or {}).get("tone", "")
     tone_line = f"원하는 글 톤: {tone} (아래 문체 규칙과 충돌하면 이 톤을 우선)" if tone else ""
+    style_mem = ((profile or {}).get("style_memory") or "").strip()
+    style_block = ""
+    if style_mem:
+        style_block = f"""
+[이전 일지들을 쓰며 내가 요청했던 문체 취향 — 꼭 반영]
+{style_mem}
+"""
 
     if n_workouts > 1:
         structure = (
@@ -279,13 +286,37 @@ def write_workout_blog(summary, analysis, before, body, after, profile=None,
 {after or '(기록 없음)'}
 
 {tone_line}
-
+{style_block}
 {STYLE_RULES}
 
 600~900자. {structure}
 마무리는 내일 하고 싶은 것이나 스스로에게 하는 말을 한 줄로 툭 던지듯.
 비장한 다짐, 명언투, 억지 감동은 금지."""
     return writer.generate(prompt, max_tokens=1800)
+
+
+def update_style_memory(existing, feedbacks):
+    """이번 세션의 수정 요청들에서 '다음에도 적용할 문체 취향'만 추려
+    기존 기억과 합친다. 결과는 짧은 목록(최대 8줄, 400자 이내)으로 유지해
+    다음 일지 프롬프트에 넣어도 토큰 부담이 없게 한다."""
+    fb = "\n".join(f"- {f}" for f in feedbacks)
+    prompt = f"""운동 일지 초안을 받아본 사용자가 이번에 요청한 수정 사항들입니다:
+{fb}
+
+[지금까지 기억해 둔 문체 취향]
+{existing.strip() or '(아직 없음)'}
+
+위 수정 요청 중 '이번 글에만 해당하는 것'(특정 문장 교체, 오늘 데이터 정정 등)은
+버리고, '다음 일지에도 계속 적용할 만한 문체·구성 취향'만 뽑아
+기존 기억과 합친 최종 목록을 만들어주세요.
+
+규칙:
+- 겹치거나 모순되면 최신 요청을 우선해 하나로 정리
+- 최대 8줄, 한 줄에 하나씩 "- "로 시작하는 간결한 규칙, 전체 400자 이내
+- 새로 뽑을 게 없으면 기존 기억을 그대로 출력
+- 기억도 없고 새로 뽑을 것도 없으면 아무것도 출력하지 마세요
+- 목록 외의 설명·인사는 출력 금지"""
+    return writer.generate(prompt, model=writer.QUICK_MODEL, max_tokens=500).strip()
 
 
 def naturalize(text):

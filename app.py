@@ -6,11 +6,12 @@ import music_flow
 import workout_flow
 import devlog_flow
 import whoop_agent
+import notion_agent
 from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-13 · v12 (누적 Strain 정확 표기+답장 기억)"
+APP_VERSION = "2026-07-18 · v13 (프로필 Notion 백업+문체 취향 기억)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="블로그 에이전트", page_icon="🎼", layout="centered")
@@ -91,6 +92,20 @@ if "code" in _qp and not st.session_state.get("wk_oauth_done"):
     st.rerun()
 
 # ── 사이드바: 모드별 프로필 설정 ─────────────────────────
+def _save_profile(filename, data):
+    """프로필 저장 + Notion 백업 결과 안내."""
+    backed_up = profile_store.save(filename, data)
+    if backed_up:
+        st.success("저장됐습니다! (Notion에 백업됨)")
+    elif notion_agent.has_settings_credentials():
+        st.warning("저장은 됐지만 Notion 백업에 실패했습니다. "
+                   "앱이 재시작되면 사라질 수 있어요.")
+    else:
+        st.success("저장됐습니다!")
+        st.caption("ℹ️ Notion(NOTION_TOKEN)을 연결하면 앱이 재시작돼도 "
+                   "프로필이 유지됩니다.")
+
+
 with st.sidebar:
     st.caption(f"🟢 버전 {APP_VERSION}")
     if st.session_state.mode:
@@ -110,19 +125,23 @@ with st.sidebar:
                     placeholder="예: 러닝, 웨이트, 요가")
         tone = st.text_input("일지 톤", value=p.get("tone", ""),
                     placeholder="예: 담백한 일기체, 자기격려, 데이터 위주")
+        style_mem = st.text_area("🧠 기억된 문체 취향", value=p.get("style_memory", ""),
+                    height=140,
+                    placeholder="일지를 완성할 때 수정 요청에서 자동으로 추려 쌓입니다. "
+                                "직접 고치거나 지워도 됩니다.")
         notes = st.text_input("기타", value=p.get("notes", ""),
                     placeholder="예: 오른쪽 무릎 주의")
         if st.button("💾 저장", use_container_width=True):
-            profile_store.save(profile_store.WORKOUT_PROFILE,
-                {"goals": goals, "sports": sports, "tone": tone, "notes": notes})
-            st.success("저장됐습니다!")
+            _save_profile(profile_store.WORKOUT_PROFILE,
+                {"goals": goals, "sports": sports, "tone": tone,
+                 "style_memory": style_mem, "notes": notes})
 
     elif st.session_state.mode == "devlog":
         st.markdown("### 📓 개발 일지")
         st.caption("발행 위치: Secrets의 NOTION_DEVLOG_PARENT_ID 페이지. "
                    "없으면 운동일지와 같은 페이지(NOTION_PARENT_ID)로 올라갑니다.")
 
-    else:  # 음악 모드 또는 모드 선택 화면
+    elif st.session_state.mode == "music":
         st.markdown("### 🎧 나의 오디오 환경")
         st.caption("저장해두면 청취 가이드가 내 환경에 맞게 작성됩니다.")
         p = profile_store.load(profile_store.AUDIO_PROFILE, profile_store.AUDIO_DEFAULT)
@@ -135,10 +154,9 @@ with st.sidebar:
         notes = st.text_input("기타", value=p.get("notes", ""),
                     placeholder="예: 이퀄라이저 Flat 세팅 사용")
         if st.button("💾 저장", use_container_width=True):
-            profile_store.save(profile_store.AUDIO_PROFILE,
+            _save_profile(profile_store.AUDIO_PROFILE,
                 {"devices": devices, "room": room,
                  "preferences": preferences, "notes": notes})
-            st.success("저장됐습니다!")
 
 # ══════════════════════════════════════════════════════════
 # 모드 선택 화면
