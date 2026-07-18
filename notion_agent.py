@@ -126,12 +126,22 @@ def md_blocks(md_text):
     return blocks
 
 
-# 운동 소제목에 쓰이는 이모지 (이걸로 시작하는 한 줄은 소제목으로 본다)
-_HEADING_EMOJIS = "🏃🚶🚴🏊🏋️🧘🧗🎾⚽💪"
+def _is_heading_line(line):
+    """'🏃 러닝'처럼 이모지로 시작하는 짧은 한 줄을 소제목으로 본다."""
+    s = line.strip()
+    if not s or len(s) > 30:
+        return False
+    c = ord(s[0])
+    # 이모지 영역: 기타 기호·딩뱃(☀~➿) 또는 이모지 블록(🌀 이상)
+    return 0x2600 <= c <= 0x27BF or c >= 0x1F300
 
 
 def _body_blocks(body_text):
-    """본문 텍스트를 Notion 블록 목록으로. 이모지로 시작하는 한 줄은 소제목."""
+    """본문 텍스트를 Notion 블록 목록으로. 이모지로 시작하는 한 줄은 소제목.
+
+    소제목 줄 바로 다음 줄에 본문이 붙어 있는 경우(빈 줄 없이)도
+    소제목 + 문단으로 분리한다.
+    """
     blocks = []
     for chunk in (body_text or "").strip().split("\n\n"):
         chunk = chunk.strip()
@@ -139,8 +149,13 @@ def _body_blocks(body_text):
             continue
         if set(chunk) <= set("─-—="):  # 구분선
             blocks.append(_divider())
-        elif "\n" not in chunk and chunk[0] in _HEADING_EMOJIS and len(chunk) <= 30:
-            blocks.append(_heading(chunk))
+            continue
+        lines = chunk.splitlines()
+        if _is_heading_line(lines[0]):
+            blocks.append(_heading(lines[0].strip()))
+            rest = "\n".join(lines[1:]).strip()
+            if rest:
+                blocks.append(_paragraph(rest))
         else:
             blocks.append(_paragraph(chunk))
     return blocks
