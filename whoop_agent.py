@@ -189,17 +189,27 @@ def _zone_minutes(zone_duration):
     return out
 
 
-def _local_time(iso_str, tz_offset):
-    """UTC ISO 문자열 + timezone_offset(예 '+09:00') → 'MM/DD HH:MM' 로컬시각."""
+def _to_local(iso_str, tz_offset):
+    """UTC ISO 문자열 + timezone_offset(예 '+09:00') → 로컬 datetime. 실패 시 None."""
     try:
         dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
         if tz_offset and len(tz_offset) >= 6:
             sign = 1 if tz_offset[0] == "+" else -1
             h, m = int(tz_offset[1:3]), int(tz_offset[4:6])
             dt = dt + sign * timedelta(hours=h, minutes=m)
-        return dt.strftime("%m/%d %H:%M")
+        return dt
     except Exception:
-        return iso_str or ""
+        return None
+
+
+def _weekday_ko(dt):
+    return "월화수목금토일"[dt.weekday()]
+
+
+def _local_time(iso_str, tz_offset):
+    """UTC ISO 문자열 + timezone_offset(예 '+09:00') → 'MM/DD HH:MM' 로컬시각."""
+    dt = _to_local(iso_str, tz_offset)
+    return dt.strftime("%m/%d %H:%M") if dt else (iso_str or "")
 
 
 def _normalize_workout(w):
@@ -294,40 +304,96 @@ def get_current_cycle():
         return {}
 
 
-def get_trend_summary(days=14):
-    """최근 days일 운동·회복 추세를 압축 텍스트로 (LLM 비용 없음).
+def get_trend_summary(days=30):
+    """최근 days일 운동·회복 추세를 '날짜가 명시된' 압축 텍스트로 (LLM 비용 없음).
 
-    코치 분석 프롬프트에 넣어 '연속성 있는 코칭'을 만드는 재료.
-    수백 토큰 수준이라 비용 부담이 거의 없다.
+    코치가 특정 요일의 수치를 지어내지 않도록 모든 수치에 날짜(요일)를 붙이고,
+    회복도·HRV·안정시심박은 최근 2주 날짜별 + 한 달 주간 평균으로 정리해
+    하루 등락이 아니라 몇 주 흐름으로 해석할 재료를 준다.
     """
     token = _valid_access_token()
     if not token:
         return _mock_trend()
     lines = []
+    tz_hint = None
+
+    # 운동: 최근 14일 상세 (날짜+요일)
     try:
-        start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        start = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
         data = _get("/v2/activity/workout", token, {"start": start, "limit": 25})
+        wlines = []
         for rec in data.get("records", []):
+            if tz_hint is None and rec.get("timezone_offset"):
+                tz_hint = rec["timezone_offset"]
             n = _normalize_workout(rec)
             if not n["scored"]:
                 continue
-            parts = [f"{n['local_time']} {n['sport']} {n['duration_min']}분"]
+            dt = _to_local(rec.get("start"), rec.get("timezone_offset"))
+            day = f"{dt.strftime('%m/%d')}({_weekday_ko(dt)})" if dt else n["local_time"][:5]
+            parts = [f"{day} {n['sport']} {n['duration_min']}분"]
             if n["strain"] is not None:
                 parts.append(f"Strain {n['strain']}")
             if n["avg_hr"]:
                 parts.append(f"평균 {n['avg_hr']}bpm")
-            lines.append("- " + " · ".join(parts))
+            wlines.append("- " + " · ".join(parts))
+        if wlines:
+            lines.append("[최근 14일 운동]")
+            lines += wlines
     except Exception:
         pass
+
+    # 회복도: 최근 days일 (하루 1개) — 최근 2주는 날짜별, 한 달은 주간 평균
     try:
-        data = _get("/v2/recovery", token, {"limit": min(days, 25)})
         recs = []
-        for r in data.get("records", []):
-            s = r.get("score") or {}
-            if s.get("recovery_score") is not None:
-                recs.append(str(round(s["recovery_score"])))
+        params = {"limit": 25}
+        while len(recs) < days:
+            data = _get("/v2/recovery", token, params)
+            for r in data.get("records", []):
+                s = r.get("score") or {}
+                dt = _to_local(r.get("created_at", ""), tz_hint or "+09:00")
+                if dt is None or s.get("recovery_score") is None:
+                    continue
+                recs.append((dt, round(s["recovery_score"]),
+                             round(s["hrv_rmssd_milli"]) if s.get("hrv_rmssd_milli") else None,
+                             s.get("resting_heart_rate")))
+            nt = data.get("next_token")
+            if not nt or not data.get("records"):
+                break
+            params = {"limit": 25, "nextToken": nt}
+        recs = recs[:days]
         if recs:
-            lines.append(f"최근 회복도 흐름(%, 최신순): {', '.join(recs)}")
+            lines.append("")
+            lines.append("[최근 14일 회복도 — 날짜별 아침 측정치]")
+            for dt, rc, hrv, rhr in recs[:14]:
+                p = [f"회복 {rc}%"]
+                if hrv:
+                    p.append(f"HRV {hrv}ms")
+                if rhr:
+                    p.append(f"안정심박 {rhr}bpm")
+                lines.append(f"- {dt.strftime('%m/%d')}({_weekday_ko(dt)}) " + " · ".join(p))
+
+            # 주간 평균 (최근 4~5주 흐름)
+            weekly = {}
+            latest = recs[0][0].date()
+            for dt, rc, hrv, _rhr in recs:
+                wk = (latest - dt.date()).days // 7
+                weekly.setdefault(wk, []).append((rc, hrv))
+            names = {0: "이번 주", 1: "지난주", 2: "2주 전", 3: "3주 전", 4: "4주 전"}
+            wl = []
+            for wk in sorted(weekly):
+                if wk > 4:
+                    break
+                vals = weekly[wk]
+                avg_rc = round(sum(v[0] for v in vals) / len(vals))
+                s = f"- {names.get(wk, f'{wk}주 전')}: 회복 평균 {avg_rc}%"
+                hrvs = [v[1] for v in vals if v[1]]
+                if hrvs:
+                    s += f" · HRV 평균 {round(sum(hrvs) / len(hrvs))}ms"
+                wl.append(s)
+            if wl:
+                lines.append("")
+                lines.append("[주간 평균 — 최근 한 달 흐름]")
+                lines += wl
     except Exception:
         pass
     return "\n".join(lines)
@@ -335,11 +401,23 @@ def get_trend_summary(days=14):
 
 # ── 데모(샘플) 데이터 ─────────────────────────────────────────────────
 def _mock_trend():
-    return ("- 07/06 러닝 42분 · Strain 14.8 · 평균 148bpm\n"
-            "- 07/05 웨이트 트레이닝 35분 · Strain 9.2\n"
-            "- 07/03 러닝 38분 · Strain 12.1\n"
-            "- 07/01 요가 30분 · Strain 5.4\n"
-            "최근 회복도 흐름(%, 최신순): 68, 55, 74, 61, 70")
+    return ("[최근 14일 운동]\n"
+            "- 07/06(월) 러닝 42분 · Strain 14.8 · 평균 148bpm\n"
+            "- 07/05(일) 웨이트 트레이닝 35분 · Strain 9.2\n"
+            "- 07/03(금) 러닝 38분 · Strain 12.1\n"
+            "- 07/01(수) 요가 30분 · Strain 5.4\n"
+            "\n"
+            "[최근 14일 회복도 — 날짜별 아침 측정치]\n"
+            "- 07/06(월) 회복 68% · HRV 74ms · 안정심박 52bpm\n"
+            "- 07/05(일) 회복 55% · HRV 61ms · 안정심박 55bpm\n"
+            "- 07/04(토) 회복 74% · HRV 79ms · 안정심박 51bpm\n"
+            "- 07/03(금) 회복 61% · HRV 66ms · 안정심박 53bpm\n"
+            "\n"
+            "[주간 평균 — 최근 한 달 흐름]\n"
+            "- 이번 주: 회복 평균 64% · HRV 평균 70ms\n"
+            "- 지난주: 회복 평균 58% · HRV 평균 65ms\n"
+            "- 2주 전: 회복 평균 71% · HRV 평균 72ms\n"
+            "- 3주 전: 회복 평균 66% · HRV 평균 69ms")
 
 
 def _mock_workouts():

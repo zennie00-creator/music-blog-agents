@@ -54,7 +54,8 @@ def _stat_table(rows):
 
 
 def build_naver_html(title, subtitle="", meta_lines=None, images=None,
-                     stat_rows=None, body_text="", note="", footer_box=None):
+                     stat_rows=None, body_text="", note="", footer_box=None,
+                     extra_html=""):
     """네이버 블로그용 HTML 문자열을 만든다.
 
     title      : 큰 제목
@@ -65,6 +66,7 @@ def build_naver_html(title, subtitle="", meta_lines=None, images=None,
     body_text  : 본문. 빈 줄(\\n\\n) 기준으로 문단 분리
     note       : 본문 위 작은 회색 괄호 노트 (선택)
     footer_box : (제목, 텍스트) — 본문 아래 구분된 박스 영역 (선택, 코치 한마디 등)
+    extra_html : 통계 카드와 본문 사이에 넣을 조각 HTML (선택, 심박존 표 등)
     """
     subtitle_html = (
         f'<p style="color:#888;font-size:14px;margin:0 0 8px;">{subtitle}</p>'
@@ -100,7 +102,7 @@ def build_naver_html(title, subtitle="", meta_lines=None, images=None,
 {_img_table(images)}
 <h2 style="font-size:20px;font-weight:700;margin:0 0 6px;">{title}</h2>
 {subtitle_html}{meta_html}{note_html}
-{_stat_table(stat_rows)}
+{_stat_table(stat_rows)}{extra_html}
 <hr style="border:none;border-top:1px solid #e9e3d0;margin:20px 0;"/>
 {paragraphs}{footer_html}
 </div>"""

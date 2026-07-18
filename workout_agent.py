@@ -27,6 +27,54 @@ def zone_line(w):
              for k, v in sorted(zones.items()) if v]
     return " · ".join(parts)
 
+
+# 심박존 상세가 특히 의미 있는 유산소성 운동 키워드
+_CARDIO_KEYS = (
+    "러닝", "달리", "조깅", "걷", "워킹", "하이킹", "등산", "사이클", "자전거",
+    "스피닝", "수영", "로잉", "조정", "줄넘기", "인터벌", "트레드밀", "에어로빅",
+    "일립티컬", "계단", "축구", "농구", "테니스", "배드민턴", "스쿼시",
+    "run", "jog", "walk", "hik", "cycl", "spin", "swim", "row", "hiit",
+    "cardio", "stair", "elliptical", "soccer", "basket", "tennis",
+)
+
+
+def is_cardio(sport):
+    s = (sport or "").lower()
+    return any(k in s for k in _CARDIO_KEYS)
+
+
+def zone_breakdown(w):
+    """0이 아닌 존별 (존키, 라벨, 분, 비율%) 목록. 존 데이터 없으면 []."""
+    zones = w.get("zones") or {}
+    total = sum(v for v in zones.values() if v)
+    if not total:
+        return []
+    return [(k, ZONE_LABELS.get(k, k), v, round(v / total * 100))
+            for k, v in sorted(zones.items()) if v]
+
+
+def _text_bar(pct, width=10):
+    filled = min(width, max(1, round(pct / 100 * width)))
+    return "█" * filled + "░" * (width - filled)
+
+
+def zone_text_block(w, indent=""):
+    """붙여넣기 텍스트·Notion용 존별 체류시간 블록 (줄 목록).
+
+    유산소 운동이면 존별 분·비율·막대를 줄마다 표기하고,
+    그 외 운동은 기존처럼 한 줄 요약만 한다.
+    """
+    bd = zone_breakdown(w)
+    if not bd:
+        return []
+    if not is_cardio(w.get("sport")):
+        zl = zone_line(w)
+        return [f"{indent}🫀 {zl}"] if zl else []
+    lines = [f"{indent}🫀 심박존 체류시간"]
+    for _k, label, mins, pct in bd:
+        lines.append(f"{indent}{label} {mins}분 · {pct}%  {_text_bar(pct)}")
+    return lines
+
 # 종목명 키워드 → 이모지 (붙여넣기 텍스트 가독성용)
 _SPORT_EMOJI = [
     (("러닝", "달리", "run"), "🏃"),
@@ -179,11 +227,19 @@ def analyze_workout(summary, profile=None, trend="", user_note="", whoop_note=""
     """
     goal = (profile or {}).get("goals", "")
     goal_line = f"이 사람의 운동 목표: {goal}" if goal else ""
+    notes = (profile or {}).get("notes", "")
+    if notes:
+        goal_line += f"\n이 사람에 대한 참고사항: {notes}"
     trend_block = ""
     if trend:
         trend_block = f"""
-[최근 2주 운동·회복 추세]
+[최근 운동·회복 추세 — 모든 수치에 날짜(요일)가 붙어 있음]
 {trend}
+
+추세 해석 규칙 (반드시 지킬 것):
+- 날짜·요일과 수치는 위 블록에 적힌 것만 언급하세요. 블록에 없는 특정 날짜/요일의
+  수치를 추측하거나 지어내는 것은 절대 금지입니다. 확실하지 않으면 날짜를 빼고 말하세요.
+- 회복도·HRV는 하루하루의 등락보다 주간 평균과 몇 주에 걸친 흐름으로 해석하세요.
 """
     note_block = ""
     if user_note and user_note.strip():
