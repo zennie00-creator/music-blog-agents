@@ -11,3 +11,6 @@ __pycache__/
 
 # 세션 복구용 초안
 .draft_state.json
+
+# 런타임에 저장되는 프로필 (Notion에 백업됨)
+workout_profile.json
