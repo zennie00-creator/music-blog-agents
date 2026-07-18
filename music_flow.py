@@ -76,7 +76,7 @@ def run():
 
     # STEP 1: 큐레이션 (대화형)
     elif step == 1:
-        st.markdown('<div class="step-pill">🎵 1단계 — 음악 선정</div>', unsafe_allow_html=True)
+        st.markdown('<div class="step-pill">음악 · 1 / 5 — 음악 선정</div>', unsafe_allow_html=True)
         st.markdown(f"**키워드:** {st.session_state.mood}")
         st.write("")
 
@@ -132,7 +132,7 @@ def run():
         artist = pending.get("artist", "")
         track = pending.get("track", "")
 
-        st.markdown('<div class="step-pill">💿 1-2단계 — 앨범 선택</div>', unsafe_allow_html=True)
+        st.markdown('<div class="step-pill">음악 · 2 / 5 — 앨범 선택</div>', unsafe_allow_html=True)
         st.markdown(f"**선정 곡:** {artist} — {track}")
         if genre == "classical":
             st.caption("같은 작품도 연주자/지휘자에 따라 느낌이 다릅니다. 원하는 음반을 골라주세요.")
@@ -187,7 +187,7 @@ def run():
     # STEP 2: 음악 정보
     elif step == 2:
         song = st.session_state.song
-        st.markdown('<div class="step-pill">📖 2단계 — 음악 정보</div>', unsafe_allow_html=True)
+        st.markdown('<div class="step-pill">음악 · 3 / 5 — 음악 정보</div>', unsafe_allow_html=True)
         st.markdown(f"**선정 곡:** {song.get('artist','')} — {song.get('track','')} ({song.get('album','')})")
         st.write("")
 
@@ -224,7 +224,7 @@ def run():
     # STEP 3: 오디오 가이드
     elif step == 3:
         song = st.session_state.song
-        st.markdown('<div class="step-pill">🔊 3단계 — 청취 가이드</div>', unsafe_allow_html=True)
+        st.markdown('<div class="step-pill">음악 · 4 / 5 — 청취 가이드</div>', unsafe_allow_html=True)
         st.markdown(f"**선정 곡:** {song.get('artist','')} — {song.get('track','')} ({song.get('album','')})")
         st.write("")
 
@@ -260,7 +260,7 @@ def run():
     # STEP 4: 블로그 글
     elif step == 4:
         song = st.session_state.song
-        st.markdown('<div class="step-pill">✍️ 4단계 — 블로그 글 작성</div>', unsafe_allow_html=True)
+        st.markdown('<div class="step-pill">음악 · 5 / 5 — 블로그 글 작성</div>', unsafe_allow_html=True)
         st.markdown(f"**선정 곡:** {song.get('artist','')} — {song.get('track','')} ({song.get('album','')})")
         st.write("")
 

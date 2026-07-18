@@ -49,10 +49,10 @@ def _zone_bar_html(w):
         color = workout_agent.ZONE_COLORS.get(k, "#999")
         segs += (f'<div style="width:{pct:.1f}%;background:{color};" '
                  f'title="{workout_agent.ZONE_LABELS.get(k, k)} {v}분"></div>')
-    return (f'<div style="margin:10px 0 2px;font-size:13px;color:#868e96;">'
+    return (f'<div style="margin:10px 0 2px;font-size:13px;color:#7c8a6c;">'
             f'{workout_agent.sport_emoji(w.get("sport"))} {w.get("sport","")} — 심박존 분포</div>'
-            f'<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;">{segs}</div>'
-            f'<div style="font-size:12px;color:#adb5bd;margin-top:3px;">{workout_agent.zone_line(w)}</div>')
+            f'<div style="display:flex;height:10px;border-radius:5px;overflow:hidden;">{segs}</div>'
+            f'<div style="font-size:12px;color:#8b9a7c;margin-top:4px;">{workout_agent.zone_line(w)}</div>')
 
 
 def _card(w, unscored=False):
@@ -65,7 +65,7 @@ def _card(w, unscored=False):
     if w.get("kcal"):
         meta.append(f"{w['kcal']}kcal")
     meta_line = " &nbsp;|&nbsp; ".join(meta) if meta else "상세 데이터 없음"
-    tag = ' <span style="color:#e8590c;">· 점수 없음</span>' if unscored else ""
+    tag = ' <span style="color:#b06a4a;">· 점수 없음</span>' if unscored else ""
     st.markdown(f"""<div class="song-card">
 <div class="song-title">🏃 {w.get('sport','운동')} · {w.get('duration_min','?')}분{tag}</div>
 <div class="song-meta">🕒 {w.get('local_time','')} &nbsp;|&nbsp; {meta_line}</div>
@@ -82,7 +82,7 @@ def run():
 
     # ── STEP w0: 운동 불러오기 + 멀티 선택 ───────────────────
     if step == "w0":
-        st.markdown('<div class="step-pill">🏃 1단계 — 오늘 운동 불러오기</div>',
+        st.markdown('<div class="step-pill">운동 · 1 / 3 — 오늘 운동 불러오기</div>',
                     unsafe_allow_html=True)
 
         if st.session_state.get("wk_oauth_error"):
@@ -158,7 +158,7 @@ def run():
 
     # ── STEP w1: 종목·거리 편집 + 주관적 기록 ────────────────
     elif step == "w1":
-        st.markdown('<div class="step-pill">✍️ 2단계 — 확인 & 오늘의 기분</div>',
+        st.markdown('<div class="step-pill">운동 · 2 / 3 — 확인 & 오늘의 기분</div>',
                     unsafe_allow_html=True)
         chosen = st.session_state.wk_selected_list
         st.caption("종목명이나 거리가 이상하면 여기서 바로 고칠 수 있어요. "
@@ -258,7 +258,7 @@ def run():
 
     # ── STEP w2: 분석 + 일지 초안 ────────────────────────────
     elif step == "w2":
-        st.markdown('<div class="step-pill">🧠 3단계 — 분석 & 운동 일지</div>',
+        st.markdown('<div class="step-pill">운동 · 3 / 3 — 분석 & 운동 일지</div>',
                     unsafe_allow_html=True)
         prof = _profile()
 

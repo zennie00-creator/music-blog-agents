@@ -1,5 +1,6 @@
 import streamlit as st
 import os, sys
+from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
 
 import music_flow
@@ -11,36 +12,108 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-18 · v13 (프로필 Notion 백업+문체 취향 기억)"
+APP_VERSION = "2026-07-18 · v14 (다이어리 디자인)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
-st.set_page_config(page_title="블로그 에이전트", page_icon="🎼", layout="centered")
+st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
 
+# 다이어리 톤 디자인 (design_handoff_diary_agent_redesign 기준)
+# 색·타이포·radius 값은 핸드오프의 Design Tokens 그대로.
 st.markdown("""
 <style>
-    .block-container { max-width: 800px; padding-top: 2rem; }
-    .song-card {
-        background: #f8f9fa; border: 1px solid #dee2e6;
-        border-radius: 12px; padding: 16px 20px; margin-bottom: 4px;
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');
+
+    html, body, .stApp { font-family: 'Noto Sans KR', system-ui, sans-serif; color: #33392c; }
+    .block-container { max-width: 640px; padding-top: 3.4rem; }
+    h1, h2, h3 {
+        font-family: 'Noto Serif KR', serif !important;
+        font-weight: 500 !important; color: #33392c !important;
     }
-    .song-title  { font-size: 15px; font-weight: 600; color: #212529; }
-    .song-meta   { font-size: 13px; color: #868e96; margin-top: 3px; }
-    .song-reason { font-size: 14px; color: #495057; margin-top: 8px; }
+    hr { border-color: #d8ded0; }
+
+    /* 카드 */
+    .song-card {
+        background: #fbfcf8; border: 1px solid #dfe6d2;
+        border-radius: 16px; padding: 18px 20px; margin-bottom: 4px;
+    }
+    .song-card:hover { border-color: #b7c7a3; }
+    .song-title  {
+        font-family: 'Noto Serif KR', serif;
+        font-size: 16px; font-weight: 600; color: #33392c;
+    }
+    .song-meta   { font-size: 12.5px; color: #8b9a7c; margin-top: 4px; }
+    .song-reason { font-size: 13.5px; color: #5c6650; margin-top: 10px; line-height: 1.6; }
+
     .section-label {
-        font-size: 12px; font-weight: 600; color: #adb5bd;
+        font-size: 12px; font-weight: 600; color: #8b9a7c;
         text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
     }
     .content-box {
-        background: #fffef7; border: 1px solid #e9e3d0;
-        border-radius: 12px; padding: 24px;
+        background: #fbfcf8; border: 1px solid #dfe6d2;
+        border-radius: 16px; padding: 22px;
         line-height: 1.9; font-size: 15px; white-space: pre-wrap;
-        color: #212529;
+        color: #3a4033;
     }
     .step-pill {
-        display: inline-block; background: #007bff; color: white;
-        border-radius: 20px; padding: 4px 14px; font-size: 13px; margin-bottom: 16px;
+        display: inline-block; background: transparent; color: #8b9a7c;
+        padding: 0; font-size: 11.5px; font-weight: 600;
+        letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 16px;
     }
-    .img-label { font-size: 11px; color: #adb5bd; text-align: center; margin-top: 4px; }
+    .img-label { font-size: 11px; color: #8b9a7c; text-align: center; margin-top: 4px; }
+
+    /* 대문 */
+    .date-label {
+        font-size: 11.5px; letter-spacing: 0.1em; color: #8b9a7c;
+        text-transform: uppercase;
+    }
+    .home-title {
+        font-family: 'Noto Serif KR', serif;
+        font-size: clamp(26px, 4vw, 34px); font-weight: 500;
+        margin-top: 14px; line-height: 1.45; color: #33392c;
+    }
+    .mode-card {
+        background: #fbfcf8; border: 1px solid #dfe6d2;
+        border-radius: 16px; padding: 20px; min-height: 112px; margin-bottom: 10px;
+    }
+    .mode-card:hover { border-color: #b7c7a3; }
+    .mode-title {
+        font-family: 'Noto Serif KR', serif;
+        font-size: 18px; font-weight: 600; color: #33392c;
+    }
+    .mode-desc { font-size: 13px; color: #7c8a6c; margin-top: 6px; line-height: 1.5; }
+    .hairline { border: none; border-top: 1px solid #d8ded0; margin: 6px 0; }
+    .resume-note { font-size: 13px; color: #697559; padding: 10px 2px; }
+
+    /* Streamlit 위젯 다듬기 */
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 12px; font-weight: 600; font-size: 13.5px;
+    }
+    .stButton > button[kind="secondary"], .stDownloadButton > button {
+        background: transparent; border: 1px solid #c7d2b5; color: #5f7d51;
+    }
+    .stButton > button[kind="secondary"]:hover, .stDownloadButton > button:hover {
+        border-color: #5f7d51; color: #4a6640; background: #fbfcf8;
+    }
+    .stButton > button[kind="primary"] { background: #5f7d51; border: none; }
+    .stButton > button[kind="primary"]:hover { background: #4a6640; }
+
+    /* info/success 알림을 배지 톤(#e2e7d9)으로 — 경고·오류는 기본색 유지 */
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]),
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {
+        background: #e2e7d9 !important; color: #4b5540; border-radius: 12px;
+    }
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) p,
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) p {
+        color: #4b5540 !important;
+    }
+
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {
+        background: #fbfcf8 !important;
+    }
+    [data-baseweb="input"], [data-baseweb="textarea"] {
+        background: #fbfcf8 !important; border-radius: 12px !important;
+        border-color: #d8ded0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -173,58 +246,56 @@ def _resume_draft(mode_name, d):
 
 
 if st.session_state.mode is None:
-    st.title("📔 일지 에이전트")
-    st.caption("오늘 어떤 글을 써볼까요? 완성한 글은 네이버·Notion에 올릴 수 있습니다.")
+    now = datetime.now(timezone(timedelta(hours=9)))  # KST
+    weekday = "월화수목금토일"[now.weekday()]
+    st.markdown(f'<div class="date-label">{now.year}년 {now.month}월 {now.day}일 · '
+                f'{weekday}요일</div>', unsafe_allow_html=True)
+    st.markdown('<div class="home-title">오늘 하루를<br>어떤 결로<br>남겨볼까요</div>',
+                unsafe_allow_html=True)
+    st.write("")
 
-    # 끊긴 세션에서 저장된 초안이 있으면 이어서 하기 제안
-    for m, label in (("workout", "🏃 운동 일지"), ("devlog", "📓 개발 일지")):
+    # 끊긴 세션에서 저장된 초안이 있으면 이어서 쓰기 배너 (상하 헤어라인)
+    for m, label in (("workout", "운동 일지"), ("devlog", "개발 일지")):
         d = draft.load(m)
         if d:
-            c1, c2, c3 = st.columns([4, 1.2, 0.8])
+            st.markdown('<hr class="hairline"/>', unsafe_allow_html=True)
+            c1, c2, c3 = st.columns([4, 1.4, 0.7])
             with c1:
-                st.info(f"작성 중이던 {label}가 있습니다 ({draft.age_minutes(d)}분 전 저장)")
+                st.markdown(f'<div class="resume-note">이어서 쓰던 글이 있어요 · {label} · '
+                            f'{draft.age_minutes(d)}분 전</div>', unsafe_allow_html=True)
             with c2:
-                st.write("")
-                if st.button("이어서 하기", key=f"resume_{m}", type="primary",
+                if st.button("이어서 쓰기", key=f"resume_{m}", type="primary",
                              use_container_width=True):
                     _resume_draft(m, d)
             with c3:
-                st.write("")
                 if st.button("🗑", key=f"deldraft_{m}", help="초안 삭제",
                              use_container_width=True):
                     draft.clear(m)
                     st.rerun()
+            st.markdown('<hr class="hairline"/>', unsafe_allow_html=True)
 
-    st.divider()
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("### 🎼 음악 감상")
-        st.caption("분위기·키워드로 음악을 고르고 감성 에세이를 씁니다.")
-        if st.button("음악 글쓰기 →", type="primary", use_container_width=True):
-            st.session_state.mode = "music"
-            st.session_state.step = 0
-            st.rerun()
-    with col2:
-        st.markdown("### 🏃 오늘 운동")
-        st.caption("Whoop 기록에 나의 기분·몸 상태를 더해 운동 일지를 씁니다.")
-        if st.button("운동 일지 →", type="primary", use_container_width=True):
-            st.session_state.mode = "workout"
-            st.session_state.step = "w0"
-            st.rerun()
-    with col3:
-        st.markdown("### 📓 개발 일지")
-        st.caption("개발 메모를 다듬어 스크린샷과 함께 Notion에 올립니다.")
-        if st.button("개발 일지 →", type="primary", use_container_width=True):
-            st.session_state.mode = "devlog"
-            st.session_state.step = "d0"
-            st.rerun()
+    st.write("")
+    _MODES = (
+        ("music",   "음악 감상", "분위기를 고르면, 곡과 함께 짧은 에세이를 씁니다", 0),
+        ("workout", "오늘 운동", "기록과 몸 상태를 더해 운동 일지를 남깁니다", "w0"),
+        ("devlog",  "개발 일지", "오늘 만든 것을 담백하게 정리한 기록으로 남깁니다", "d0"),
+    )
+    for col, (mode_key, title, desc, first_step) in zip(st.columns(3), _MODES):
+        with col:
+            st.markdown(f'<div class="mode-card"><div class="mode-title">{title}</div>'
+                        f'<div class="mode-desc">{desc}</div></div>',
+                        unsafe_allow_html=True)
+            if st.button("쓰기 →", key=f"go_{mode_key}", use_container_width=True):
+                st.session_state.mode = mode_key
+                st.session_state.step = first_step
+                st.rerun()
 
 # ══════════════════════════════════════════════════════════
 # 음악 모드
 # ══════════════════════════════════════════════════════════
 elif st.session_state.mode == "music":
-    st.title("🎼 음악 블로그 에이전트")
-    st.caption("분위기나 키워드를 입력하면 단계별로 함께 블로그 글을 완성해 드립니다.")
+    st.title("음악 감상")
+    st.caption("분위기나 키워드를 입력하면 단계별로 함께 글을 완성해 드립니다.")
     st.divider()
     music_flow.run()
 
@@ -232,7 +303,7 @@ elif st.session_state.mode == "music":
 # 운동 모드
 # ══════════════════════════════════════════════════════════
 elif st.session_state.mode == "workout":
-    st.title("🏃 운동 블로그 에이전트")
+    st.title("오늘 운동")
     st.caption("Whoop 데이터와 나의 느낌을 합쳐 운동 일지를 완성해 드립니다.")
     st.divider()
     workout_flow.run()
@@ -241,7 +312,7 @@ elif st.session_state.mode == "workout":
 # 개발 일지 모드
 # ══════════════════════════════════════════════════════════
 elif st.session_state.mode == "devlog":
-    st.title("📓 개발 일지")
+    st.title("개발 일지")
     st.caption("개발 메모를 정리해 이미지와 함께 Notion에 발행합니다.")
     st.divider()
     devlog_flow.run()
