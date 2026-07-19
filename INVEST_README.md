@@ -31,6 +31,8 @@ python3 invest.py --check   # 데이터·API 연결 점검
 | `python3 invest.py --no-publish` | Notion 없이 로컬(`journals/`)에만 저장 |
 | `python3 invest.py --ask "질문"` | Grok 단발 리서치 (insights.md 기록) |
 | `python3 invest.py --discuss "주제"` | 나·Grok·Claude 삼자 토론 (이어하기 지원) |
+| `python3 invest.py --weekly` | 🗓 주간 회고 (지난 7일 일지 + 신호 리뷰, 토요일 아침 자동) |
+| `python3 invest.py --signal-report` | 📋 신호 성적표 (신호 발생 후 5/20일 수익률 검증) |
 
 ## 3. 설정 파일 (줄 단위로 자유 편집)
 
@@ -44,6 +46,8 @@ python3 invest.py --check   # 데이터·API 연결 점검
 - **`thesis.md`** — 투자 전제(기둥: 금리/유동성/산업 + New Trends). 매일 신호를
   이 전제에 비춰 해석하고, Grok이 기둥별 🟢🟡🔴 상태를 판정.
 - **`sources.md`** — Grok이 우선 참고할 뉴스·X 계정·뉴스레터.
+- **`trades.md`** — 실제 매매를 한 줄씩 기록하면 일지가 '계획 vs 행동' 갭을 짚어줌
+  (trades.example.md 참고).
 
 ## 4. Notion 셋업
 
@@ -70,7 +74,16 @@ repo Settings → Secrets에 키 4개 등록 → 화~토 06:30 KST 자동 실행
 | 가격-거래량 다이버전스 | 약세 다이버전스 = 비중 축소 검토 |
 | 반등 품질·RSI·H&S | 조정 후 반등이 진성인지 데드캣/우측어깨 위험인지 |
 | 주도주 RS·수급 | 주도주 이탈(천장 선행) / 선회복(진성 반등 방증) |
+| VCP 수축 (Minervini) | 변동성 수축 + 거래량 드라이업 → 돌파 관찰 (해당일만 표시) |
 | Put/Call | 옵션 심리 역발상 지표 |
+
+신호 판정은 매일 `signal_log/`에 자동 축적되어 `--signal-report`로 사후 검증된다.
+
+## 푸시 알림 (선택)
+
+🚨급 신호가 뜬 날만 폰 알림을 받으려면: 폰에 ntfy 앱 설치 → 추측 불가능한
+토픽 구독 (예: invest-zn-8k2p9x) → `.env`에 `NTFY_TOPIC=토픽이름`.
+미설정이면 꺼져 있음.
 
 ## 문제 해결
 
