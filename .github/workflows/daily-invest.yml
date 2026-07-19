@@ -1,0 +1,61 @@
+# 📈 투자 파이프라인 배포 (GitHub Actions)
+#
+# 하루 리듬:
+#   - 모닝 브리핑: 미국 장 마감 후 KST 화~토 06:30 자동 실행 → Notion 발행
+#   - 투자 일지: 한국 장 마감 후 수동 실행(Actions 탭 → Run workflow → memo 입력)
+#     또는 로컬에서 `python invest.py --memo "..."`
+#
+# 필요한 Secrets (repo Settings → Secrets and variables → Actions):
+#   ANTHROPIC_API_KEY / XAI_API_KEY / NOTION_API_KEY / NOTION_DATABASE_ID
+#
+# 참고:
+#   - thesis.md / portfolio.md가 리포에 없으면 기본 구성으로 동작한다.
+#     전제·워치리스트를 반영하려면 커밋하거나 (private repo 권장) Secrets로 주입.
+#   - Actions 러너는 실행마다 초기화되므로, 오후 일지를 Actions에서 돌리면
+#     아침 브리핑 상태가 없어 Grok 분석을 한 번 더 실행한다 (동작에는 문제 없음).
+#     아침 분석 재사용은 로컬 실행에서 유효하다.
+
+name: daily-invest
+
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"  # UTC 월~금 21:30 = KST 화~토 06:30 (미장 마감 후)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "실행 모드"
+        type: choice
+        options: [brief, journal]
+        default: journal
+      memo:
+        description: "오늘의 투자 메모 (journal 모드)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Asia/Seoul  # date.today()가 한국 날짜가 되도록
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+      NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
+      NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run pipeline
+        run: |
+          MODE="${{ github.event.inputs.mode || 'brief' }}"
+          if [ "$MODE" = "journal" ]; then
+            python invest.py --memo "${{ github.event.inputs.memo }}"
+          else
+            python invest.py --brief
+          fi
