@@ -19,13 +19,14 @@ name: daily-invest
 
 on:
   schedule:
-    - cron: "30 21 * * 1-5"  # UTC 월~금 21:30 = KST 화~토 06:30 (미장 마감 후)
+    - cron: "30 21 * * 1-5"  # UTC 월~금 21:30 = KST 화~토 06:30 (미장 마감 후) → 브리핑
+    - cron: "0 0 * * 6"      # UTC 토 00:00 = KST 토 09:00 → 주간 회고
   workflow_dispatch:
     inputs:
       mode:
         description: "실행 모드"
         type: choice
-        options: [brief, journal]
+        options: [brief, journal, weekly]
         default: journal
       memo:
         description: "오늘의 투자 메모 (journal 모드)"
@@ -33,7 +34,7 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  contents: write  # 신호 로그(signal_log/) 자동 커밋용
 
 jobs:
   run:
@@ -53,9 +54,22 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Run pipeline
         run: |
-          MODE="${{ github.event.inputs.mode || 'brief' }}"
+          MODE="${{ github.event.inputs.mode }}"
+          if [ -z "$MODE" ]; then
+            # 스케줄 실행: 토요일 09시(KST) cron이면 주간 회고, 아니면 브리핑
+            if [ "${{ github.event.schedule }}" = "0 0 * * 6" ]; then MODE=weekly; else MODE=brief; fi
+          fi
           if [ "$MODE" = "journal" ]; then
             python invest.py --memo "${{ github.event.inputs.memo }}"
+          elif [ "$MODE" = "weekly" ]; then
+            python invest.py --weekly
           else
             python invest.py --brief
           fi
+      - name: Commit signal log
+        # 신호 성적표용 이력 축적 — 러너는 매번 초기화되므로 repo에 커밋해 보존
+        run: |
+          git config user.name "invest-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add signal_log 2>/dev/null || true
+          git diff --cached --quiet || { git commit -m "chore: signal log $(date +%F)"; git push; }

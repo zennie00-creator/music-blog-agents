@@ -5,25 +5,51 @@
 - 10s30s (미 30년-10년): 장기 기대·수급 (재정 우려 시 스티프닝)
 - 한미 10년 금리차: 역전 폭 확대는 자본 유출·원화 약세 압력
 
-portfolio.md의 채권 심볼(stooq 형식 `{만기}usy.b` / `{만기}kry.b`)을 자동 인식한다.
+채권 심볼 인식:
+- CBOE 금리 지수 (Yahoo, **당일치**): `^IRX`(3개월) `^FVX`(5년) `^TNX`(10년)
+  `^TYX`(30년) — 구글시트 GOOGLEFINANCE("INDEXCBOE:TNX")/10 과 같은 원천.
+  ×10 표기는 market_data에서 자동 정규화됨.
+- FRED 상수만기 (영업일 1일 지연): `fred/DGS2` `fred/DGS20` 등 CBOE에 없는 만기.
+  → 스프레드가 당일치(CBOE)와 전일치(FRED)를 섞을 수 있음: 하루 변동 수 bp
+    수준의 오차로, 일지 용도로는 허용. 정밀 비교가 필요하면 전부 FRED로.
+- 한국: 일별 무료 소스가 마땅치 않아 기본 구성에서 제외. portfolio.md에
+  `krbond/10` 형식으로 추가하면 한미 금리차가 자동 복원된다.
 """
 import re
 
 TITLE = "금리 커브 · 한미 금리차"
 
-_BOND = re.compile(r"^(\d+)(us|kr)y\.b$")
+# CBOE 금리 지수 → (국가, 만기년). ^IRX는 13주(≈3개월) = 0.25년.
+_YAHOO_YIELD = {"^IRX": ("us", 0.25), "^FVX": ("us", 5),
+                "^TNX": ("us", 10), "^TYX": ("us", 30)}
+# FRED 미국채 상수만기: fred/DGS{만기}
+_FRED_US = re.compile(r"^fred/DGS(\d+)$")
+# 한국 일별 국채 심볼(사용자가 추가할 경우): krbond/{만기}
+_KR = re.compile(r"^krbond/(\d+)$")
 LOOKBACK = 20  # 20거래일 전 대비 변화
 
 
 def _bond_yields(ctx):
     out = {}
     for sym, rows in ctx["histories"].items():
-        m = _BOND.match(sym)
-        if not m or len(rows) < 2:
+        if len(rows) < 2:
             continue
+        if sym in _YAHOO_YIELD:
+            key = _YAHOO_YIELD[sym]
+        else:
+            mus, mkr = _FRED_US.match(sym), _KR.match(sym)
+            if mus:
+                key = ("us", int(mus.group(1)))
+            elif mkr:
+                key = ("kr", int(mkr.group(1)))
+            else:
+                continue
         closes = [r["close"] for r in rows]
         ago = closes[-(LOOKBACK + 1)] if len(closes) > LOOKBACK else closes[0]
-        out[(m.group(2), int(m.group(1)))] = {"now": closes[-1], "ago": ago}
+        # 같은 만기가 CBOE(당일치)와 FRED 양쪽에 있으면 CBOE 우선
+        if key in out and sym not in _YAHOO_YIELD:
+            continue
+        out[key] = {"now": closes[-1], "ago": ago}
     return out
 
 

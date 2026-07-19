@@ -11,7 +11,10 @@ import requests
 
 TITLE = "옵션 심리 — Put/Call Ratio"
 
-_UA = {"User-Agent": "Mozilla/5.0 (daily-journal-agent)"}
+# CBOE cdn은 브라우저 User-Agent가 없으면 403을 준다.
+_UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+       "Accept": "application/json,text/plain,*/*"}
 
 # CBOE 무료 딜레이드 통계 엔드포인트 후보 (위에서부터 시도)
 _ENDPOINTS = [

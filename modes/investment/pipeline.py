@@ -16,12 +16,30 @@ import os
 from datetime import date as _date
 
 from core import config
+from core.notify import alert_lines, push
 from core.notion import publish_page
-from modes.investment import charts, market_data, signals
+from modes.investment import charts, market_data, signal_log, signals
 from modes.investment.analysis_agent import analyze_market
 from modes.investment.journal_agent import write_journal
 
 JOURNAL_DIR = os.path.join(config.ROOT_DIR, "journals")
+
+
+def load_trades(days: int = 14) -> str:
+    """trades.md의 최근 N일 매매 기록 (plan vs action 점검용). 없으면 빈 문자열."""
+    path = os.path.join(config.ROOT_DIR, "trades.md")
+    if not os.path.exists(path):
+        return ""
+    from datetime import timedelta
+    cutoff = (_date.today() - timedelta(days=days)).isoformat()
+    lines = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            # "- 2026-07-18 ..." 형식의 최근 기록만
+            if s.startswith("- 2") and len(s) > 12 and s[2:12] >= cutoff:
+                lines.append(s)
+    return "\n".join(lines)
 
 
 def load_thesis() -> str:
@@ -36,6 +54,8 @@ def load_thesis() -> str:
 def _collect():
     ctx = market_data.collect_context()
     data_md = market_data.dashboard_md(ctx) + "\n\n" + signals.run_all(ctx)
+    if signal_log.record(ctx):
+        print("  🗂 신호 로그 기록 (signal_log/)")
     return ctx, data_md
 
 
@@ -95,6 +115,12 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
     else:
         print("\n⏭️ [3/3] Notion 발행 건너뜀 (--no-publish)")
 
+    # 🚨급 신호가 뜬 날만 푸시 (NTFY_TOPIC 설정 시)
+    alerts = alert_lines(data_md)
+    if alerts:
+        push("\n".join(alerts), title="Morning Brief Signal",
+             click_url=result["notion_url"])
+
     return result
 
 
@@ -116,8 +142,11 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
         analysis = analyze_market(today, data_md, thesis=thesis)
         print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
 
+    trades = load_trades()
+    if trades:
+        print(f"  🧾 최근 매매 기록 반영 ({len(trades.splitlines())}건)")
     print("\n✍️ [3/4] Claude - 투자 일지 작성 중...")
-    journal = write_journal(today, data_md, analysis, memo, thesis=thesis)
+    journal = write_journal(today, data_md, analysis, memo, thesis=thesis, trades=trades)
 
     # 차트는 일지 생성 후에 붙인다 (LLM 토큰 소모 없음, Notion에서 이미지로 렌더)
     charts_md = charts.charts_markdown(ctx)

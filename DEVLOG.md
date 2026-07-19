@@ -2,6 +2,89 @@
 
 일지 에이전트 개발 기록.
 
+## 2026-07-20 (3) — 야간 자율 작업: 벤치마크 백로그 5종 구현
+
+사용자 승인 하에 자율 진행 (PR #9에 커밋 누적). 전부 합성 데이터로 검증.
+
+### ① 신호 이력 로그 + 성적표 (signal_log.py)
+- 매 실행마다 심볼별 신호 판정+종가를 `signal_log/YYYY-MM.jsonl`에 기록
+  (같은 날짜 재실행은 덮어씀). Actions가 실행 후 자동 커밋해 러너 초기화에도 누적.
+- `--signal-report`: 신호 발생 후 5/20거래일 수익률을 신호별로 집계 —
+  "약세 다이버전스 뒤에 실제로 빠졌나"를 데이터로 검증. 10건 미만은 참고용 표시.
+
+### ② 주간 회고 (weekly.py, --weekly)
+- 지난 7일 일지·브리핑(차트 제거, 건당 4천자 컷) + 신호 성적표 + 전제 →
+  Claude가 '판단 vs 결과' 중심 회고 작성. 빗나간 판단은 원인 분류
+  (전제 오류/신호 무시/타이밍/운). Notion 발행 + 토요일 09시 KST cron 추가.
+
+### ③ 푸시 알림 (core/notify.py)
+- ntfy.sh (무료·무가입). NTFY_TOPIC 설정 시 🚨/✳️급 신호가 뜬 날만
+  한 줄 푸시 + Notion 링크. 미설정이면 조용히 꺼짐 (quiet unless signal).
+
+### ④ 매매 기록 (trades.md)
+- 최근 14일 매매 기록을 일지에 전달 → '계획 vs 행동' 갭 점검
+  (재매수 대기라 적고 안 산 것, 신호 떴는데 무행동 등). 프로젝트의 출발점이던
+  '재매수 기회 놓침' 패턴을 직접 겨냥.
+
+### ⑤ VCP 수축 감지 (signals/vcp.py)
+- Minervini VCP의 실용 버전: 60일 고점 -15% 이내 베이스 + 최근 10일 변동성이
+  직전 20일의 65% 미만 + 거래량 드라이업(70% 미만) + 피벗(30일 고점) 근접도.
+- 해당 없으면 섹션 자체 생략 (노이즈 억제). signal_log에도 추적 → 성적표 대상.
+- 반등품질(조정 후 회복)과 상보적: VCP는 '조정 없이 다지는 구간'을 본다.
+
+### 기타
+- workflow: contents:write + 신호 로그 자동 커밋 스텝, weekly cron/dispatch.
+- INVEST_README에 신규 명령·설정 반영.
+
+## 2026-07-20 (2) — 채권을 CBOE 금리지수 하이브리드로 (사용자 시트 참조 반영)
+
+사용자의 기존 구글시트 수식 `GOOGLEFINANCE("INDEXCBOE:TNX")/10` 참조:
+CBOE 금리 지수는 Yahoo에도 있고(^IRX 3개월/^FVX 5년/^TNX 10년/^TYX 30년)
+**당일 마감치**가 나온다 (FRED DGS는 영업일 1일 지연 → 아침 브리핑에 이틀 전
+금리가 실릴 수 있는 문제 해결).
+
+- 채권 구성: ^IRX(3개월)·^TNX(10년)·^TYX(30년) 당일치 + CBOE에 없는
+  2년/20년만 FRED(DGS2/DGS20). 같은 만기 중복 시 CBOE 우선.
+- ×10 표기 자동 정규화: 평균값 >15면 /10 (금리가 15%를 넘을 일 없음 — 안전).
+- 스프레드가 당일치와 전일치를 섞을 수 있음(수 bp 오차) — 일지 용도 허용,
+  docstring에 명시.
+- investing.com IMPORTXML 방식(사용자 시트의 2년물)은 채택 안 함:
+  Cloudflare 봇 차단으로 파이썬/Actions에서 불안정. 2년물은 FRED로 충분.
+
+## 2026-07-20 — 데이터 소스 교체 (stooq → Yahoo + FRED)
+
+로컬 `--check` 결과 stooq가 봇 차단(JS 검증 챌린지)으로 전멸. 진단으로
+Yahoo가 브라우저 User-Agent만 붙이면 정상 JSON을 주는 것 확인 → 소스 교체.
+
+### 변경
+- `market_data.py`: `_fetch_stooq` 제거, `_fetch_yahoo`(v8 chart API, UA 필수,
+  심볼 URL 인코딩) + `_fetch_fred`(국채 금리 CSV, 무키, cosd로 기간 제한) 추가.
+  fetch_history 분기: (접두사 없음)=Yahoo, `fred/`=FRED, `naver/`=네이버.
+  브라우저 UA로 통일 (Yahoo·FRED·CBOE 모두 UA 요구).
+- `portfolio.md` 심볼 재작성 (Yahoo/FRED):
+  · 채권: fred/DGS2·DGS10·DGS20·DGS30 (미국 상수만기)
+  · 지수: ^GSPC ^NDX ^DJI ^SOX ^KS11 ^VIX / 000001.SS ^HSI
+  · 환율/금/BTC: KRW=X / GC=F / BTC-USD
+  · 주도주: NVDA MU @^SOX, naver/000660(SK하이닉스) @^KS11
+- `yield_curve.py`: stooq 정규식(`{n}usy.b`) → FRED(`fred/DGS{n}`) 인식.
+  한국 일별 국채는 무료 소스가 마땅치 않아 기본 구성에서 제외 → **한미 금리차
+  신호는 당분간 미출력**. portfolio.md에 `krbond/10` 형식으로 일별 소스를
+  추가하면 자동 복원되게 매핑만 열어둠.
+- `put_call.py`: CBOE 403 대응 브라우저 UA 강화 (실패 시 기존대로 우아하게 스킵).
+
+### 검증 (합성/모킹, 실데이터는 사용자 --check로)
+- Yahoo 파서: 실제 v8 응답 구조(None 결측 스킵, ^GSPC/KRW=X URL 인코딩) 통과
+- FRED 파서: CSV 결측('.') 스킵 통과
+- fetch_history 라우팅 3소스 분기 통과
+- 금리 커브: FRED 인식 + 2s10s 역전 + 한국물 유무에 따른 한미차 토글 통과
+- 전체 파이프라인: 18개 자산 수집 → 대시보드/5개 신호/차트 8개 정상
+
+### 아침 확인 사항 (사용자)
+- `git pull` 후 `python invest.py --check` → Yahoo/FRED 실동작 확인
+- Yahoo가 로컬 curl에선 UA로 됐으니 파이썬 requests도 될 것으로 예상
+- CBOE Put/Call은 UA로도 막히면 알려줄 것 (대체 소스 검토)
+- Notion은 여전히 데이터베이스 생성 + integration 연결 필요 (별개 이슈)
+
 ## 2026-07-19 (6) — 뉴스·오피니언 소스 지정 (sources.md)
 
 - 오해 정리: CNN은 뉴스가 아니라 공포·탐욕 지수 전용. 뉴스 수집은 Grok

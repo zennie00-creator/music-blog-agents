@@ -1,7 +1,12 @@
 """시장 데이터 수집 레이어 — API 키 없이 받을 수 있는 무료 소스 사용.
 
-- Stooq 히스토리 CSV: 지수·미국 주식·환율·금리·원자재 (기본 소스)
-- 네이버 금융: 한국 개별 종목 (portfolio.md에서 `naver/000660` 형식)
+소스는 portfolio.md의 심볼 접두사로 자동 분기한다:
+- (접두사 없음) Yahoo Finance: 지수·미국 주식·환율·금·BTC (거래량 제공)
+- `fred/DGS10`  FRED(세인트루이스 연준): 국채 금리 (거래량 개념 없음)
+- `naver/000660` 네이버 금융: 한국 개별 종목
+
+  ※ stooq는 봇 차단(JS 검증)으로 폐기 (2026-07). Yahoo는 브라우저 UA 필요.
+
 - CNN Fear & Greed: 공포·탐욕 지수
 
 히스토리를 받는 이유: ① 등락률을 전일 종가 대비로 정확히 계산,
@@ -12,34 +17,95 @@ modes/investment/signals/ 패키지가 담당한다.
 import ast
 import csv
 import io
-from datetime import date, timedelta
+import time
+import urllib.parse
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
 from modes.investment import charts, portfolio, signals
 from modes.investment.indicators import rsi_series
 
-_UA = {"User-Agent": "Mozilla/5.0 (daily-journal-agent)"}
+# Yahoo·FRED는 봇 요청에 브라우저 User-Agent를 요구한다.
+_UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
 
 HISTORY_DAYS = 120
 
+# CBOE 금리 지수 (Yahoo 제공) — 구글시트 GOOGLEFINANCE("INDEXCBOE:TNX")/10 과
+# 같은 원천. 값이 금리×10으로 나오는 경우가 있어 fetch 시 자동 정규화한다.
+# FRED(DGS)와 달리 당일 마감치가 바로 나온다 (FRED는 영업일 1일 지연).
+YIELD_INDEX_SYMBOLS = {"^IRX", "^FVX", "^TNX", "^TYX"}
 
-def _fetch_stooq(symbol: str, days: int):
-    d2 = date.today()
-    d1 = d2 - timedelta(days=days)
-    url = (f"https://stooq.com/q/d/l/?s={symbol}&i=d"
-           f"&d1={d1.strftime('%Y%m%d')}&d2={d2.strftime('%Y%m%d')}")
+
+def _normalize_yield(rows):
+    """CBOE 금리 지수의 ×10 표기 자동 보정 (금리가 15%를 넘을 일은 없다)."""
+    closes = [r["close"] for r in rows if r["close"]]
+    if closes and sum(closes) / len(closes) > 15:
+        for r in rows:
+            r["close"] = r["close"] / 10
+    return rows
+
+
+# 다수 심볼을 연속 호출하면 Yahoo가 429(rate limit)를 줄 수 있어
+# 두 호스트를 폴백으로 두고 짧게 재시도한다.
+_YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+
+
+def _yahoo_get(quoted: str, rng: str):
+    last_err = None
+    for attempt in range(2):
+        for host in _YAHOO_HOSTS:
+            url = (f"https://{host}/v8/finance/chart/{quoted}"
+                   f"?interval=1d&range={rng}")
+            try:
+                r = requests.get(url, headers=_UA, timeout=30)
+                if r.status_code == 429:
+                    last_err = requests.HTTPError("429 Too Many Requests")
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except requests.RequestException as e:
+                last_err = e
+        time.sleep(1.5 * (attempt + 1))  # 백오프 후 재시도
+    raise last_err
+
+
+def _fetch_yahoo(symbol: str, days: int):
+    """Yahoo Finance v8 chart API. 지수/종목/환율/금/BTC + 거래량."""
+    rng = "1y" if days > 180 else "6mo"
+    quoted = urllib.parse.quote(symbol, safe="")
+    result = _yahoo_get(quoted, rng)["chart"]["result"][0]
+    ts = result.get("timestamp") or []
+    quote = result["indicators"]["quote"][0]
+    closes = quote.get("close") or []
+    vols = quote.get("volume") or []
+    rows = []
+    for i, t in enumerate(ts):
+        c = closes[i] if i < len(closes) else None
+        if c is None:
+            continue
+        v = vols[i] if i < len(vols) else None
+        d = datetime.fromtimestamp(t, tz=timezone.utc).strftime("%Y-%m-%d")
+        rows.append({"date": d, "close": float(c), "volume": float(v) if v else 0.0})
+    return rows
+
+
+def _fetch_fred(series: str, days: int):
+    """FRED CSV — 국채 금리 등 매크로 시계열 (무키, 거래량 없음)."""
+    cosd = (date.today() - timedelta(days=days + 30)).strftime("%Y-%m-%d")
+    url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}&cosd={cosd}"
     r = requests.get(url, headers=_UA, timeout=30)
     r.raise_for_status()
+    reader = csv.reader(io.StringIO(r.text))
+    next(reader, None)  # 헤더: observation_date,SERIES
     rows = []
-    for row in csv.DictReader(io.StringIO(r.text)):
+    for row in reader:
+        if len(row) < 2 or row[1] in (".", ""):
+            continue
         try:
-            rows.append({
-                "date": row["Date"],
-                "close": float(row["Close"]),
-                "volume": float(row["Volume"]) if row.get("Volume") not in (None, "", "0") else 0.0,
-            })
-        except (KeyError, ValueError, TypeError):
+            rows.append({"date": row[0], "close": float(row[1]), "volume": 0.0})
+        except ValueError:
             continue
     return rows
 
@@ -77,7 +143,12 @@ def fetch_history(symbol: str, days: int = HISTORY_DAYS):
     try:
         if symbol.startswith("naver/"):
             return _fetch_naver(symbol.split("/", 1)[1], days)
-        return _fetch_stooq(symbol, days)
+        if symbol.startswith("fred/"):
+            return _fetch_fred(symbol.split("/", 1)[1], days)
+        rows = _fetch_yahoo(symbol, days)
+        if symbol in YIELD_INDEX_SYMBOLS:
+            rows = _normalize_yield(rows)
+        return rows
     except Exception as e:
         print(f"  ⚠️ {symbol} 히스토리 수집 실패: {e}")
         return []
