@@ -43,6 +43,10 @@ def markdown_to_blocks(md: str):
             blocks.append({"type": "quote", "quote": {"rich_text": _rich_text(stripped[2:])}})
         elif stripped in ("---", "***", "___"):
             blocks.append({"type": "divider", "divider": {}})
+        elif stripped.startswith("![") and "](" in stripped and stripped.endswith(")"):
+            url = stripped[stripped.index("](") + 2:-1]
+            blocks.append({"type": "image",
+                           "image": {"type": "external", "external": {"url": url}}})
         else:
             blocks.append({"type": "paragraph", "paragraph": {"rich_text": _rich_text(stripped)}})
     return blocks

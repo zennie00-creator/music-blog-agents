@@ -7,7 +7,8 @@
   python invest.py --memo-file memo.txt
   python invest.py --no-publish             # Notion 발행 없이 로컬 저장만
   python invest.py --ask "질문"             # Grok 단발 리서치 (insights.md 기록)
-  python invest.py --discuss "주제"         # 나·Grok·Claude 삼자 토론 루프
+  python invest.py --discuss "주제"         # 나·Grok·Claude 삼자 토론 (이어하기 지원)
+  python invest.py --discuss                # 최근 토론 이어서 재개
   python invest.py --check                  # 데이터 소스·API 연결 헬스체크
 """
 import argparse
@@ -26,7 +27,8 @@ def main():
     p.add_argument("--memo-file", default="", help="메모가 담긴 텍스트 파일 경로")
     p.add_argument("--no-publish", action="store_true", help="Notion 발행 생략")
     p.add_argument("--ask", default="", help="Grok 단발 리서치 질문 (insights.md 기록)")
-    p.add_argument("--discuss", default="", help="삼자 토론 주제 (나·Grok·Claude)")
+    p.add_argument("--discuss", nargs="?", const="__latest__", default="",
+                   help="삼자 토론 주제 (생략 시 최근 토론 재개)")
     p.add_argument("--check", action="store_true", help="데이터 소스·API 연결 헬스체크")
     args = p.parse_args()
 
@@ -39,7 +41,13 @@ def main():
         print(discussion.ask_once(args.ask, thesis=load_thesis()))
         return
     if args.discuss:
-        discussion.discuss(args.discuss, thesis=load_thesis())
+        topic = args.discuss
+        if topic == "__latest__":
+            topic = discussion.latest_topic()
+            if not topic:
+                print("재개할 토론이 없습니다. --discuss \"주제\" 로 새로 시작하세요.")
+                return
+        discussion.discuss(topic, thesis=load_thesis())
         return
 
     memo = args.memo

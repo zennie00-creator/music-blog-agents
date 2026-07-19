@@ -16,7 +16,7 @@ from datetime import date, timedelta
 
 import requests
 
-from modes.investment import portfolio, signals
+from modes.investment import charts, portfolio, signals
 from modes.investment.indicators import rsi_series
 
 _UA = {"User-Agent": "Mozilla/5.0 (daily-journal-agent)"}
@@ -120,8 +120,8 @@ def dashboard_md(ctx) -> str:
     if not ctx["histories"]:
         lines.append("- (시세 데이터 수집 실패)")
     else:
-        lines.append("| 구분 | 지표 | 종가 | 전일 대비 | 거래량 | RSI(14) | 기준일 |")
-        lines.append("| --- | --- | ---: | ---: | ---: | ---: | --- |")
+        lines.append("| 구분 | 지표 | 종가 | 전일 대비 | 거래량 | RSI(14) | 60일 추세 | 기준일 |")
+        lines.append("| --- | --- | ---: | ---: | ---: | ---: | --- | --- |")
         for title, syms in ctx["sections"]:
             for sym in syms:
                 hist = ctx["histories"][sym]
@@ -130,8 +130,9 @@ def dashboard_md(ctx) -> str:
                 vol = f"{last['volume']:,.0f}" if last["volume"] else ""
                 rsi = rsi_series([r["close"] for r in hist])[-1]
                 rsi_s = f"{rsi:.0f}" if rsi is not None else ""
+                spark = charts.sparkline([r["close"] for r in hist[-60:]])
                 lines.append(f"| {title} | {ctx['names'][sym]} | {last['close']:,.2f} "
-                             f"| {chg:+.2f}% | {vol} | {rsi_s} | {last['date']} |")
+                             f"| {chg:+.2f}% | {vol} | {rsi_s} | {spark} | {last['date']} |")
 
     fg = ctx.get("fear_greed")
     if fg:

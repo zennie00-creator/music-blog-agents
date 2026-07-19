@@ -8,7 +8,7 @@ from datetime import date as _date
 
 from core import config
 from core.notion import publish_page
-from modes.investment import market_data
+from modes.investment import charts, market_data, signals
 from modes.investment.analysis_agent import analyze_market
 from modes.investment.journal_agent import write_journal
 
@@ -30,7 +30,8 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     thesis = load_thesis()
 
     print(f"\n📊 [1/4] 시장 데이터 수집 중... ({today})")
-    data_md = market_data.collect()
+    ctx = market_data.collect_context()
+    data_md = market_data.dashboard_md(ctx) + "\n\n" + signals.run_all(ctx)
     print(data_md)
 
     print("\n🔍 [2/4] Grok - 시장·테크 분석 중..." + (" (전제 상태 보드 포함)" if thesis else ""))
@@ -39,6 +40,11 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
 
     print("\n✍️ [3/4] Claude - 투자 일지 작성 중...")
     journal = write_journal(today, data_md, analysis, memo, thesis=thesis)
+
+    # 차트는 일지 생성 후에 붙인다 (LLM 토큰 소모 없음, Notion에서 이미지로 렌더)
+    charts_md = charts.charts_markdown(ctx)
+    if charts_md:
+        journal += "\n\n## 차트\n" + charts_md
 
     result = {"date": today, "journal": journal, "notion_url": "", "local_path": ""}
 
