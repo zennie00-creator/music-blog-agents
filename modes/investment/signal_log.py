@@ -13,7 +13,7 @@ import json
 import os
 
 from core import config
-from modes.investment.signals import divergence, rebound, relative_strength
+from modes.investment.signals import divergence, rebound, relative_strength, vcp
 
 LOG_DIR = os.path.join(config.ROOT_DIR, "signal_log")
 
@@ -25,6 +25,7 @@ _TRACKED = {
     "rebound": "반등 품질",
     "rs": "주도주 RS",
     "hs": "헤드앤숄더 의심",
+    "vcp": "VCP 수축",
 }
 
 
@@ -42,6 +43,9 @@ def snapshot(ctx) -> dict:
             rec["rebound"] = r.get("verdict") or r["phase"]
             if r.get("hs"):
                 rec["hs"] = "detected"
+        v = vcp.detect(rows)
+        if v:
+            rec["vcp"] = "near_pivot" if v["near_pivot"] else "contracting"
         bench = ctx.get("benchmarks", {}).get(sym)
         if bench and bench in ctx["histories"]:
             rs = relative_strength.analyze(rows, ctx["histories"][bench])
