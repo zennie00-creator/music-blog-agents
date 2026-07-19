@@ -244,7 +244,9 @@ def _normalize_workout(w):
         "distance_m": round(dist) if dist else None,
         "altitude_gain_m": round(alt) if alt else None,
         "percent_recorded": score.get("percent_recorded"),
-        "zones": _zone_minutes(score.get("zone_duration")),
+        # v2 API는 zone_durations(복수), v1은 zone_duration(단수)
+        "zones": _zone_minutes(score.get("zone_durations")
+                               or score.get("zone_duration")),
     }
 
 
