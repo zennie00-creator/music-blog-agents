@@ -12,6 +12,7 @@
   python invest.py --discuss                # 최근 토론 이어서 재개
   python invest.py --check                  # 데이터 소스·API 연결 헬스체크
   python invest.py --signal-report          # 신호 성적표 (발생 후 5/20일 수익률)
+  python invest.py --weekly                 # 주간 회고 (지난 7일 일지+신호 리뷰)
 """
 import argparse
 import sys
@@ -34,11 +35,17 @@ def main():
                    help="삼자 토론 주제 (생략 시 최근 토론 재개)")
     p.add_argument("--check", action="store_true", help="데이터 소스·API 연결 헬스체크")
     p.add_argument("--signal-report", action="store_true", help="신호 성적표 출력")
+    p.add_argument("--weekly", action="store_true", help="주간 회고 생성·발행")
     args = p.parse_args()
 
     if args.check:
         from modes.investment.healthcheck import run_check
         run_check()
+        return
+
+    if args.weekly:
+        from modes.investment.weekly import run_weekly
+        run_weekly(publish=not args.no_publish)
         return
 
     if args.signal_report:
