@@ -2,6 +2,33 @@
 
 일지 에이전트 개발 기록.
 
+## 2026-07-19 (5) — 하루 두 번 리듬 + GitHub Actions 배포
+
+### 아침/오후 분리 (pipeline.py)
+- `run_brief()` 아침 (미장 마감 후): 데이터·신호 + Grok 분석·전제 보드 →
+  📊 모닝 브리핑 발행. **Claude 호출 없음** (브리핑은 대시보드+신호+Grok으로 충분).
+  Grok 분석을 `journals/.brief-날짜.json`에 저장.
+- `run()` 오후 (한국장 마감 후): 데이터 재수집(한국장 반영) + **아침 Grok 분석
+  재사용**(재실행 없음) + 내 메모 → Claude가 📈 투자 일지 작성·발행.
+  아침 브리핑이 없으면 Grok 즉석 실행으로 폴백.
+- CLI: `--brief` 추가.
+
+### 배포 (.github/workflows/daily-invest.yml)
+- 모닝 브리핑: cron UTC 월~금 21:30 = KST 화~토 06:30 자동.
+- 투자 일지: workflow_dispatch (memo 입력) 또는 로컬 실행.
+- TZ=Asia/Seoul (러너 UTC 날짜 밀림 방지). Secrets 4개 필요.
+- 주의: Actions 러너는 매 실행 초기화 → 오후 일지를 Actions로 돌리면 아침
+  분석 재사용이 안 되고 Grok을 한 번 더 부른다 (로컬 실행은 재사용됨).
+- 미결: thesis.md/portfolio.md는 gitignore 상태라 Actions에선 기본 구성으로
+  동작. 반영하려면 커밋(우선 후보) 또는 Secrets 주입 — 사용자 결정 대기.
+
+### 벤치마크 제안 (디스커션에서 제안, 구현 대기)
+1. 신호 이력 로그 + 사후 검증 (신호의 성적표) ← 최우선 추천
+2. 주간 회고 리뷰 (--weekly)
+3. 신호 있는 날만 푸시 알림 (텔레그램/ntfy.sh)
+4. 매매 기록 trades.md (plan vs action 갭 점검)
+5. 데이터 소스 이중화 (stooq fallback)
+
 ## 2026-07-19 (4) — 토론 이어하기(토큰 최소화) + 시각화
 
 ### 토론 상태 지속 · 토큰 설계 (discussion.py 재작성)
