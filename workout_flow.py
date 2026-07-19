@@ -349,8 +349,10 @@ def run():
                 with st.spinner("수정 중..."):
                     sports = ", ".join(w.get("sport", "") for w in st.session_state.wk_selected_list)
                     st.session_state.wk_blog_prev = st.session_state.wk_blog  # 되돌리기용 백업
-                    st.session_state.wk_blog = writer.revise_with_feedback(
-                        "운동 일지", st.session_state.wk_blog, feedback, f"운동: {sports}")
+                    st.session_state.wk_blog = workout_agent.clean_blog_text(
+                        writer.revise_with_feedback(
+                            "운동 일지", st.session_state.wk_blog, feedback,
+                            f"운동: {sports}"))
                     # 완성 시점에 문체 취향으로 추려서 기억하기 위해 모아둔다
                     st.session_state.wk_style_fb = (
                         (st.session_state.get("wk_style_fb") or []) + [feedback.strip()])
