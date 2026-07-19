@@ -5,8 +5,5 @@ __pycache__/
 .DS_Store
 .env
 journals/
-thesis.md
-portfolio.md
 insights.md
 discussions/
-sources.md
