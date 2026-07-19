@@ -17,6 +17,7 @@ modes/investment/signals/ 패키지가 담당한다.
 import ast
 import csv
 import io
+import time
 import urllib.parse
 from datetime import date, datetime, timedelta, timezone
 
@@ -32,15 +33,35 @@ _UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 HISTORY_DAYS = 120
 
 
+# 다수 심볼을 연속 호출하면 Yahoo가 429(rate limit)를 줄 수 있어
+# 두 호스트를 폴백으로 두고 짧게 재시도한다.
+_YAHOO_HOSTS = ("query1.finance.yahoo.com", "query2.finance.yahoo.com")
+
+
+def _yahoo_get(quoted: str, rng: str):
+    last_err = None
+    for attempt in range(2):
+        for host in _YAHOO_HOSTS:
+            url = (f"https://{host}/v8/finance/chart/{quoted}"
+                   f"?interval=1d&range={rng}")
+            try:
+                r = requests.get(url, headers=_UA, timeout=30)
+                if r.status_code == 429:
+                    last_err = requests.HTTPError("429 Too Many Requests")
+                    continue
+                r.raise_for_status()
+                return r.json()
+            except requests.RequestException as e:
+                last_err = e
+        time.sleep(1.5 * (attempt + 1))  # 백오프 후 재시도
+    raise last_err
+
+
 def _fetch_yahoo(symbol: str, days: int):
     """Yahoo Finance v8 chart API. 지수/종목/환율/금/BTC + 거래량."""
     rng = "1y" if days > 180 else "6mo"
     quoted = urllib.parse.quote(symbol, safe="")
-    url = (f"https://query1.finance.yahoo.com/v8/finance/chart/{quoted}"
-           f"?interval=1d&range={rng}")
-    r = requests.get(url, headers=_UA, timeout=30)
-    r.raise_for_status()
-    result = r.json()["chart"]["result"][0]
+    result = _yahoo_get(quoted, rng)["chart"]["result"][0]
     ts = result.get("timestamp") or []
     quote = result["indicators"]["quote"][0]
     closes = quote.get("close") or []
