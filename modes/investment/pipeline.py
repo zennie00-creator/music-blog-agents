@@ -16,6 +16,7 @@ import os
 from datetime import date as _date
 
 from core import config
+from core.notify import alert_lines, push
 from core.notion import publish_page
 from modes.investment import charts, market_data, signal_log, signals
 from modes.investment.analysis_agent import analyze_market
@@ -96,6 +97,12 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
         print(f"✅ 발행 완료: {url}")
     else:
         print("\n⏭️ [3/3] Notion 발행 건너뜀 (--no-publish)")
+
+    # 🚨급 신호가 뜬 날만 푸시 (NTFY_TOPIC 설정 시)
+    alerts = alert_lines(data_md)
+    if alerts:
+        push("\n".join(alerts), title="Morning Brief Signal",
+             click_url=result["notion_url"])
 
     return result
 
