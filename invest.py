@@ -8,6 +8,7 @@
   python invest.py --no-publish             # Notion 발행 없이 로컬 저장만
   python invest.py --ask "질문"             # Grok 단발 리서치 (insights.md 기록)
   python invest.py --discuss "주제"         # 나·Grok·Claude 삼자 토론 루프
+  python invest.py --check                  # 데이터 소스·API 연결 헬스체크
 """
 import argparse
 import sys
@@ -26,7 +27,13 @@ def main():
     p.add_argument("--no-publish", action="store_true", help="Notion 발행 생략")
     p.add_argument("--ask", default="", help="Grok 단발 리서치 질문 (insights.md 기록)")
     p.add_argument("--discuss", default="", help="삼자 토론 주제 (나·Grok·Claude)")
+    p.add_argument("--check", action="store_true", help="데이터 소스·API 연결 헬스체크")
     args = p.parse_args()
+
+    if args.check:
+        from modes.investment.healthcheck import run_check
+        run_check()
+        return
 
     if args.ask:
         print(discussion.ask_once(args.ask, thesis=load_thesis()))
