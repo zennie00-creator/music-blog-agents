@@ -133,14 +133,15 @@ def _one_workout_lines(w, idx=None, total=1):
     lines.append(f"{head}{w.get('sport', '운동')}"
                  + (f" · {w['local_time']}" if w.get("local_time") else ""))
 
+    # '- '로 시작하면 st.markdown이 목록으로 바꿔 줄 간격이 벌어지므로 '·' 사용
     def add(label, value, unit=""):
         if value not in (None, ""):
-            lines.append(f"  - {label}: {value}{unit}")
+            lines.append(f"· {label}: {value}{unit}")
 
     add("운동 시간", w.get("duration_min"), "분")
     dt = _distance_text(w)
     if dt:
-        lines.append(f"  - 거리: {dt}")
+        lines.append(f"· 거리: {dt}")
     add("Strain(강도, 0~21)", w.get("strain"))
     add("평균 심박수", w.get("avg_hr"), " bpm")
     add("최대 심박수", w.get("max_hr"), " bpm")
@@ -152,7 +153,7 @@ def _one_workout_lines(w, idx=None, total=1):
         z = ", ".join(f"{ZONE_LABELS.get(k, k)} {v}분"
                       for k, v in sorted(zones.items()) if v)
         if z:
-            lines.append(f"  - 심박존 분포: {z}")
+            lines.append(f"· 심박존 분포: {z}")
     return lines
 
 
