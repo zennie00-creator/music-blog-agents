@@ -8,6 +8,8 @@
 기울기를 '기간 전체 변화율(%)'로 정규화해 비교한다.
 """
 
+from modes.investment.indicators import trend_pct
+
 TITLE = "가격-거래량 다이버전스 (매도/비중조절 신호, 최근 15거래일)"
 
 # 추세 판정 임계값 (기간 전체 변화율 기준)
@@ -23,20 +25,6 @@ SIGNALS = {
 }
 
 
-def _trend_pct(values):
-    """최소자승 기울기를 기간 전체 변화율(%)로 정규화."""
-    n = len(values)
-    if n < 2:
-        return 0.0
-    mean = sum(values) / n
-    if mean == 0:
-        return 0.0
-    xs = range(n)
-    x_mean = (n - 1) / 2
-    denom = sum((x - x_mean) ** 2 for x in xs)
-    slope = sum((x - x_mean) * (y - mean) for x, y in zip(xs, values)) / denom
-    return slope * (n - 1) / mean * 100
-
 
 def detect(rows, window: int = 15):
     """일별 시세 rows([{close, volume}, ...] 과거→최신 순)에서 다이버전스 판정.
@@ -48,8 +36,8 @@ def detect(rows, window: int = 15):
         return None
     recent = usable[-window:]
 
-    price_trend = _trend_pct([r["close"] for r in recent])
-    vol_trend = _trend_pct([r["volume"] for r in recent])
+    price_trend = trend_pct([r["close"] for r in recent])
+    vol_trend = trend_pct([r["volume"] for r in recent])
 
     price_up = price_trend >= PRICE_TREND_PCT
     price_down = price_trend <= -PRICE_TREND_PCT

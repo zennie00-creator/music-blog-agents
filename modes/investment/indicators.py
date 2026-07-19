@@ -48,3 +48,17 @@ def local_minima(values, order: int = 3):
         if values[i] == min(window) and window.count(values[i]) == 1:
             idx.append(i)
     return idx
+
+
+def trend_pct(values):
+    """최소자승 기울기를 기간 전체 변화율(%)로 정규화."""
+    n = len(values)
+    if n < 2:
+        return 0.0
+    mean = sum(values) / n
+    if mean == 0:
+        return 0.0
+    x_mean = (n - 1) / 2
+    denom = sum((x - x_mean) ** 2 for x in range(n))
+    slope = sum((x - x_mean) * (y - mean) for x, y in enumerate(values)) / denom
+    return slope * (n - 1) / mean * 100

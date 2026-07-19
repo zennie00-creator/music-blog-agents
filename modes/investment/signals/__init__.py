@@ -12,9 +12,11 @@ ctx(dict) 구성 (market_data.collect_context() 참조):
   ctx["names"]      : {심볼: 표시 이름}
   ctx["fear_greed"] : {"score", "rating"} | None
 """
-from modes.investment.signals import divergence, rebound, put_call
+from modes.investment.signals import (
+    divergence, rebound, put_call, yield_curve, relative_strength,
+)
 
-ALL = [divergence, rebound, put_call]
+ALL = [yield_curve, divergence, rebound, relative_strength, put_call]
 
 
 def run_all(ctx) -> str:

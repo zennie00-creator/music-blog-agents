@@ -15,25 +15,29 @@ from modes.investment.journal_agent import write_journal
 JOURNAL_DIR = os.path.join(config.ROOT_DIR, "journals")
 
 
+def load_thesis() -> str:
+    """리포 루트의 thesis.md (나의 투자 전제). 없으면 빈 문자열."""
+    path = os.path.join(config.ROOT_DIR, "thesis.md")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    return ""
+
+
 def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     """일지 파이프라인 실행. 결과(마크다운, notion URL, 로컬 경로)를 dict로 반환."""
     today = _date.today().isoformat()
+    thesis = load_thesis()
 
     print(f"\n📊 [1/4] 시장 데이터 수집 중... ({today})")
     data_md = market_data.collect()
     print(data_md)
 
-    print("\n🔍 [2/4] Grok - 시장·테크 분석 중...")
-    analysis = analyze_market(today, data_md)
+    print("\n🔍 [2/4] Grok - 시장·테크 분석 중..." + (" (전제 상태 보드 포함)" if thesis else ""))
+    analysis = analyze_market(today, data_md, thesis=thesis)
     print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
 
     print("\n✍️ [3/4] Claude - 투자 일지 작성 중...")
-    thesis = ""
-    thesis_path = os.path.join(config.ROOT_DIR, "thesis.md")
-    if os.path.exists(thesis_path):
-        with open(thesis_path, encoding="utf-8") as f:
-            thesis = f.read()
-        print("  📌 thesis.md 반영 (나의 투자 전제)")
     journal = write_journal(today, data_md, analysis, memo, thesis=thesis)
 
     result = {"date": today, "journal": journal, "notion_url": "", "local_path": ""}
