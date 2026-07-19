@@ -17,7 +17,7 @@ from datetime import date as _date
 
 from core import config
 from core.notion import publish_page
-from modes.investment import charts, market_data, signals
+from modes.investment import charts, market_data, signal_log, signals
 from modes.investment.analysis_agent import analyze_market
 from modes.investment.journal_agent import write_journal
 
@@ -36,6 +36,8 @@ def load_thesis() -> str:
 def _collect():
     ctx = market_data.collect_context()
     data_md = market_data.dashboard_md(ctx) + "\n\n" + signals.run_all(ctx)
+    if signal_log.record(ctx):
+        print("  🗂 신호 로그 기록 (signal_log/)")
     return ctx, data_md
 
 
