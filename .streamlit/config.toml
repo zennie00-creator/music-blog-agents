@@ -1,0 +1,7 @@
+# 다이어리 톤 테마 (디자인 핸드오프의 Design Tokens 반영)
+[theme]
+base = "light"
+primaryColor = "#5f7d51"           # 액센트 (버튼/포커스)
+backgroundColor = "#f4f6ee"        # 세이지 크림 배경
+secondaryBackgroundColor = "#e9edde"  # 사이드바·입력창 배경
+textColor = "#33392c"

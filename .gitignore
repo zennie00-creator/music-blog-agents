@@ -1,9 +1,22 @@
 blog_*.txt
 blog_*_naver.html
+workout_log.txt
+workout_log_naver.html
 __pycache__/
 *.pyc
 .DS_Store
 .env
+
+# Whoop OAuth 토큰 (절대 커밋 금지)
+.whoop_token.json
+
+# 세션 복구용 초안
+.draft_state.json
+
+# 런타임에 저장되는 프로필 (Notion에 백업됨)
+workout_profile.json
+
+# 투자 일지 출력물·대화 기록
 journals/
 insights.md
 discussions/

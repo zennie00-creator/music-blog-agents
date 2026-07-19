@@ -1,49 +1,127 @@
 import streamlit as st
-import os, sys, json
+import os, sys
+from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
 
-import anthropic
-from curation_agent import chat_curation, get_album_versions
-from info_agent import get_music_info
-from audio_agent import get_audio_info
-from image_agent import get_album_art, get_artist_image
+import music_flow
+import workout_flow
+import devlog_flow
+import whoop_agent
+import notion_agent
+from core import profile as profile_store
+from core import draft
 
-PROFILE_PATH = os.path.join(os.path.dirname(__file__), "audio_profile.json")
+# 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
+APP_VERSION = "2026-07-19 · v16 (Whoop v2 존 필드명 수정)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
-st.set_page_config(page_title="음악 블로그 에이전트", page_icon="🎼", layout="centered")
+st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
 
+# 다이어리 톤 디자인 (design_handoff_diary_agent_redesign 기준)
+# 색·타이포·radius 값은 핸드오프의 Design Tokens 그대로.
 st.markdown("""
 <style>
-    .block-container { max-width: 800px; padding-top: 2rem; }
-    .song-card {
-        background: #f8f9fa; border: 1px solid #dee2e6;
-        border-radius: 12px; padding: 16px 20px; margin-bottom: 4px;
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;600&family=Noto+Sans+KR:wght@300;400;500;600&display=swap');
+
+    html, body, .stApp { font-family: 'Noto Sans KR', system-ui, sans-serif; color: #33392c; }
+    .block-container { max-width: 640px; padding-top: 3.4rem; }
+    h1, h2, h3 {
+        font-family: 'Noto Serif KR', serif !important;
+        font-weight: 500 !important; color: #33392c !important;
     }
-    .song-title  { font-size: 15px; font-weight: 600; color: #212529; }
-    .song-meta   { font-size: 13px; color: #868e96; margin-top: 3px; }
-    .song-reason { font-size: 14px; color: #495057; margin-top: 8px; }
+    hr { border-color: #d8ded0; }
+
+    /* 카드 */
+    .song-card {
+        background: #fbfcf8; border: 1px solid #dfe6d2;
+        border-radius: 16px; padding: 18px 20px; margin-bottom: 4px;
+    }
+    .song-card:hover { border-color: #b7c7a3; }
+    .song-title  {
+        font-family: 'Noto Serif KR', serif;
+        font-size: 16px; font-weight: 600; color: #33392c;
+    }
+    .song-meta   { font-size: 12.5px; color: #8b9a7c; margin-top: 4px; }
+    .song-reason { font-size: 13.5px; color: #5c6650; margin-top: 10px; line-height: 1.6; }
+
     .section-label {
-        font-size: 12px; font-weight: 600; color: #adb5bd;
+        font-size: 12px; font-weight: 600; color: #8b9a7c;
         text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;
     }
     .content-box {
-        background: #fffef7; border: 1px solid #e9e3d0;
-        border-radius: 12px; padding: 24px;
+        background: #fbfcf8; border: 1px solid #dfe6d2;
+        border-radius: 16px; padding: 22px;
         line-height: 1.9; font-size: 15px; white-space: pre-wrap;
-        color: #212529;
+        color: #3a4033;
     }
     .step-pill {
-        display: inline-block; background: #007bff; color: white;
-        border-radius: 20px; padding: 4px 14px; font-size: 13px; margin-bottom: 16px;
+        display: inline-block; background: transparent; color: #8b9a7c;
+        padding: 0; font-size: 11.5px; font-weight: 600;
+        letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 16px;
     }
-    .img-label { font-size: 11px; color: #adb5bd; text-align: center; margin-top: 4px; }
+    .img-label { font-size: 11px; color: #8b9a7c; text-align: center; margin-top: 4px; }
+
+    /* 대문 */
+    .date-label {
+        font-size: 11.5px; letter-spacing: 0.1em; color: #8b9a7c;
+        text-transform: uppercase;
+    }
+    .home-title {
+        font-family: 'Noto Serif KR', serif;
+        font-size: clamp(26px, 4vw, 34px); font-weight: 500;
+        margin-top: 14px; line-height: 1.45; color: #33392c;
+    }
+    .mode-card {
+        background: #fbfcf8; border: 1px solid #dfe6d2;
+        border-radius: 16px; padding: 20px; min-height: 112px; margin-bottom: 10px;
+    }
+    .mode-card:hover { border-color: #b7c7a3; }
+    .mode-title {
+        font-family: 'Noto Serif KR', serif;
+        font-size: 18px; font-weight: 600; color: #33392c;
+    }
+    .mode-desc { font-size: 13px; color: #7c8a6c; margin-top: 6px; line-height: 1.5; }
+    .hairline { border: none; border-top: 1px solid #d8ded0; margin: 6px 0; }
+    .resume-note { font-size: 13px; color: #697559; padding: 10px 2px; }
+
+    /* Streamlit 위젯 다듬기 */
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 12px; font-weight: 600; font-size: 13.5px;
+    }
+    .stButton > button[kind="secondary"], .stDownloadButton > button {
+        background: transparent; border: 1px solid #c7d2b5; color: #5f7d51;
+    }
+    .stButton > button[kind="secondary"]:hover, .stDownloadButton > button:hover {
+        border-color: #5f7d51; color: #4a6640; background: #fbfcf8;
+    }
+    .stButton > button[kind="primary"] { background: #5f7d51; border: none; }
+    .stButton > button[kind="primary"]:hover { background: #4a6640; }
+
+    /* info/success 알림을 배지 톤(#e2e7d9)으로 — 경고·오류는 기본색 유지 */
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]),
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) {
+        background: #e2e7d9 !important; color: #4b5540; border-radius: 12px;
+    }
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"]) p,
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) p {
+        color: #4b5540 !important;
+    }
+
+    .stTextInput input, .stTextArea textarea, .stNumberInput input {
+        background: #fbfcf8 !important;
+    }
+    [data-baseweb="input"], [data-baseweb="textarea"] {
+        background: #fbfcf8 !important; border-radius: 12px !important;
+        border-color: #d8ded0 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ── 세션 초기화 ───────────────────────────────────────────
 DEFAULTS = {
+    "mode": None,          # None(모드 선택) | "music" | "workout"
     "step": 0,
+    # 음악 모드
     "mood": "",
     "chat_history": [],
     "current_options": None,
@@ -55,393 +133,186 @@ DEFAULTS = {
     "info": "",
     "audio": "",
     "blog": "",
+    # 운동 모드
+    "wk_workouts": [],
+    "wk_recovery": {},
+    "wk_cycle": {},
+    "wk_selected_list": [],
+    "wk_summary": "",
+    "wk_before": "",
+    "wk_body": "",
+    "wk_after": "",
+    "wk_analysis": "",
+    "wk_blog": "",
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
 
-# ── 오디오 프로필 로드/저장 ───────────────────────────────
-def load_profile():
+# ── Whoop OAuth 콜백 처리 ─────────────────────────────────
+# Whoop 로그인 후 앱으로 돌아오면 URL에 ?code=... 가 붙는다.
+# 이 code를 토큰으로 교환하고 운동 모드로 진입시킨다.
+_qp = st.query_params
+if "code" in _qp and not st.session_state.get("wk_oauth_done"):
     try:
-        with open(PROFILE_PATH, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"devices": "", "room": "", "preferences": "", "notes": ""}
+        whoop_agent.exchange_code(_qp["code"])
+        st.session_state.wk_oauth_done = True
+        st.session_state.mode = "workout"
+        st.session_state.step = "w0"
+    except Exception as e:
+        st.session_state.wk_oauth_error = str(e)
+    st.query_params.clear()
+    st.rerun()
 
-def save_profile(p):
-    with open(PROFILE_PATH, "w", encoding="utf-8") as f:
-        json.dump(p, f, ensure_ascii=False, indent=2)
-
-# ── 사이드바: 오디오 프로필 설정 ─────────────────────────
-with st.sidebar:
-    st.markdown("### 🎧 나의 오디오 환경")
-    st.caption("저장해두면 청취 가이드가 내 환경에 맞게 작성됩니다.")
-    p = load_profile()
-    devices     = st.text_area("청취 기기", value=p.get("devices",""),
-                    placeholder="예: Sony WH-1000XM5 헤드폰, Sonos Era 300 스피커")
-    room        = st.text_input("청취 공간", value=p.get("room",""),
-                    placeholder="예: 15평 거실, 작은 서재, 통근 지하철")
-    preferences = st.text_area("청취 성향", value=p.get("preferences",""),
-                    placeholder="예: 저음 풍부한 걸 좋아함, 보컬이 선명하게 들리길 원함")
-    notes       = st.text_input("기타", value=p.get("notes",""),
-                    placeholder="예: 이퀄라이저 Flat 세팅 사용")
-    if st.button("💾 저장", use_container_width=True):
-        save_profile({"devices": devices, "room": room,
-                      "preferences": preferences, "notes": notes})
-        st.success("저장됐습니다!")
-
-# ── 헬퍼 ─────────────────────────────────────────────────
-def revise_with_feedback(content_type, original, feedback, song):
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-    msg = client.messages.create(
-        model="claude-opus-4-6", max_tokens=1500,
-        messages=[{"role": "user", "content":
-            f"""다음 {content_type} 내용을 사용자 피드백에 맞게 수정해주세요.
-음악: {song.get('artist','')} - {song.get('track','')} ({song.get('album','')})
-
-[원본]
-{original}
-
-[사용자 피드백]
-{feedback}
-
-같은 형식과 분량을 유지하면서 피드백을 반영해주세요."""}]
-    )
-    return msg.content[0].text
-
-def display_chat(history):
-    for m in history:
-        content = m["content"]
-        if m["role"] == "assistant" and "[SONGS]" in content:
-            content = content.split("[SONGS]")[0].strip()
-        with st.chat_message("assistant" if m["role"] == "assistant" else "user"):
-            st.markdown(content)
-
-def show_images():
-    """세션에 저장된 이미지 표시"""
-    artist_img = st.session_state.get("artist_img")
-    album_art  = st.session_state.get("album_art")
-    if not artist_img and not album_art:
-        return
-    cols = st.columns(2)
-    with cols[0]:
-        if artist_img:
-            st.image(artist_img, use_container_width=True)
-            st.markdown('<div class="img-label">아티스트</div>', unsafe_allow_html=True)
-    with cols[1]:
-        if album_art:
-            st.image(album_art, use_container_width=True)
-            st.markdown('<div class="img-label">앨범 아트</div>', unsafe_allow_html=True)
-
-def fetch_images(artist, album):
-    """이미지를 가져와 세션에 저장"""
-    st.session_state.artist_img = get_artist_image(artist)
-    st.session_state.album_art  = get_album_art(artist, album)
-
-def make_naver_html(song, blog_text, artist_img, album_art):
-    """네이버 블로그에 바로 붙여넣기 가능한 HTML 생성"""
-    img_section = ""
-    if artist_img or album_art:
-        img_cols = ""
-        if artist_img:
-            img_cols += f'<td style="padding:8px;text-align:center;"><img src="{artist_img}" width="240" style="border-radius:8px;"/><br/><span style="font-size:12px;color:#999;">아티스트</span></td>'
-        if album_art:
-            img_cols += f'<td style="padding:8px;text-align:center;"><img src="{album_art}" width="240" style="border-radius:8px;"/><br/><span style="font-size:12px;color:#999;">앨범</span></td>'
-        img_section = f'<table style="margin:0 auto 24px;border:none;"><tr>{img_cols}</tr></table>'
-
-    version_note = f'<p style="color:#888;font-size:13px;margin:0 0 20px;">({song.get("version_info","")})</p>' if song.get("version_info") else ""
-
-    paragraphs = "".join(
-        f'<p style="margin:0 0 1.4em;line-height:1.9;">{p.strip()}</p>'
-        for p in blog_text.strip().split("\n\n") if p.strip()
-    )
-
-    return f"""<div style="max-width:680px;margin:0 auto;font-family:'나눔명조','Nanum Myeongjo',Georgia,serif;font-size:16px;color:#2c2c2c;">
-{img_section}
-<h2 style="font-size:20px;font-weight:700;margin:0 0 6px;">{song.get('artist','')} — {song.get('track','')}</h2>
-<p style="color:#888;font-size:13px;margin:0 0 4px;">💿 {song.get('album','')}</p>
-{version_note}
-<hr style="border:none;border-top:1px solid #e9e3d0;margin:20px 0;"/>
-{paragraphs}
-</div>"""
-
-# ══════════════════════════════════════════════════════════
-# STEP 0: 시작
-# ══════════════════════════════════════════════════════════
-st.title("🎼 음악 블로그 에이전트")
-st.caption("분위기나 키워드를 입력하면 단계별로 함께 블로그 글을 완성해 드립니다.")
-st.divider()
-
-if st.session_state.step == 0:
-    mood_input = st.text_input(
-        "오늘의 분위기나 키워드",
-        placeholder="예: 피곤한 일요일 오후, 설레는 봄 아침, 비 오는 밤..."
-    )
-    if st.button("시작하기 →", type="primary", disabled=not mood_input.strip()):
-        st.session_state.mood = mood_input.strip()
-        st.session_state.step = 1
-        st.rerun()
-
-# ══════════════════════════════════════════════════════════
-# STEP 1: 큐레이션 (대화형)
-# ══════════════════════════════════════════════════════════
-elif st.session_state.step == 1:
-    st.markdown('<div class="step-pill">🎵 1단계 — 음악 선정</div>', unsafe_allow_html=True)
-    st.markdown(f"**키워드:** {st.session_state.mood}")
-    st.write("")
-
-    if not st.session_state.chat_history:
-        with st.spinner("큐레이터가 준비 중..."):
-            response, options = chat_curation(st.session_state.mood, [])
-            st.session_state.chat_history = [
-                {"role": "user",      "content": f"오늘의 분위기/키워드: {st.session_state.mood}"},
-                {"role": "assistant", "content": response},
-            ]
-            st.session_state.current_options = options
-        st.rerun()
-
-    display_chat(st.session_state.chat_history)
-
-    if st.session_state.current_options:
-        st.write("")
-        st.markdown("**마음에 드는 곡을 선택하거나, 아래 채팅으로 피드백을 주세요:**")
-        for i, opt in enumerate(st.session_state.current_options):
-            col_card, col_btn = st.columns([5, 1])
-            with col_card:
-                st.markdown(f"""<div class="song-card">
-<div class="song-title">🎵 {opt.get('artist','')} — {opt.get('track','')}</div>
-<div class="song-meta">💿 {opt.get('album','')} &nbsp;|&nbsp; {opt.get('genre','')}</div>
-<div class="song-reason">{opt.get('reason','')}</div>
-</div>""", unsafe_allow_html=True)
-            with col_btn:
-                st.write("")
-                st.write("")
-                if st.button("선택", key=f"pick_{i}", type="primary"):
-                    st.session_state.pending_song = opt
-                    # 아티스트 이미지는 미리 로드, 앨범 아트는 최종 앨범 선택 후 업데이트
-                    st.session_state.artist_img = get_artist_image(opt.get("artist",""))
-                    st.session_state.album_art  = None
-                    st.session_state.step = "1b"
-                    st.rerun()
-        st.write("")
-
-    user_input = st.chat_input("답변 또는 피드백을 입력하세요...")
-    if user_input:
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-        with st.spinner("큐레이터가 생각 중..."):
-            response, options = chat_curation(
-                st.session_state.mood, st.session_state.chat_history)
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
-        if options:
-            st.session_state.current_options = options
-        st.rerun()
-
-# ══════════════════════════════════════════════════════════
-# STEP 1b: 앨범 버전 선택 (모든 장르)
-# ══════════════════════════════════════════════════════════
-elif st.session_state.step == "1b":
-    pending = st.session_state.pending_song
-    genre   = pending.get("genre", "non-classical")
-    artist  = pending.get("artist", "")
-    track   = pending.get("track", "")
-
-    st.markdown('<div class="step-pill">💿 1-2단계 — 앨범 선택</div>', unsafe_allow_html=True)
-    st.markdown(f"**선정 곡:** {artist} — {track}")
-    if genre == "classical":
-        st.caption("같은 작품도 연주자/지휘자에 따라 느낌이 다릅니다. 원하는 음반을 골라주세요.")
+# ── 사이드바: 모드별 프로필 설정 ─────────────────────────
+def _save_profile(filename, data):
+    """프로필 저장 + Notion 백업 결과 안내."""
+    backed_up = profile_store.save(filename, data)
+    if backed_up:
+        st.success("저장됐습니다! (Notion에 백업됨)")
+    elif notion_agent.has_settings_credentials():
+        st.warning("저장은 됐지만 Notion 백업에 실패했습니다. "
+                   "앱이 재시작되면 사라질 수 있어요.")
     else:
-        st.caption("이 곡이 수록된 여러 앨범/버전입니다. 원하는 버전을 골라주세요.")
+        st.success("저장됐습니다!")
+        st.caption("ℹ️ Notion(NOTION_TOKEN)을 연결하면 앱이 재시작돼도 "
+                   "프로필이 유지됩니다.")
+
+
+with st.sidebar:
+    st.caption(f"🟢 버전 {APP_VERSION}")
+    if st.session_state.mode:
+        if st.button("← 모드 다시 선택", use_container_width=True):
+            st.session_state.mode = None
+            st.session_state.step = 0
+            st.rerun()
+        st.divider()
+
+    if st.session_state.mode == "workout":
+        st.markdown("### 🏃 나의 운동 프로필")
+        st.caption("저장해두면 분석·일지가 내 목표와 톤에 맞게 작성됩니다.")
+        p = profile_store.load(profile_store.WORKOUT_PROFILE, profile_store.WORKOUT_DEFAULT)
+        goals = st.text_area("운동 목표", value=p.get("goals", ""),
+                    placeholder="예: 체지방 감량, 10km 45분 완주, 무릎 부담 없이 지속")
+        sports = st.text_input("주로 하는 운동", value=p.get("sports", ""),
+                    placeholder="예: 러닝, 웨이트, 요가")
+        tone = st.text_input("일지 톤", value=p.get("tone", ""),
+                    placeholder="예: 담백한 일기체, 자기격려, 데이터 위주")
+        style_mem = st.text_area("🧠 기억된 문체 취향", value=p.get("style_memory", ""),
+                    height=140,
+                    placeholder="일지를 완성할 때 수정 요청에서 자동으로 추려 쌓입니다. "
+                                "직접 고치거나 지워도 됩니다.")
+        notes = st.text_input("기타", value=p.get("notes", ""),
+                    placeholder="예: 오른쪽 무릎 주의")
+        if st.button("💾 저장", use_container_width=True):
+            _save_profile(profile_store.WORKOUT_PROFILE,
+                {"goals": goals, "sports": sports, "tone": tone,
+                 "style_memory": style_mem, "notes": notes})
+
+    elif st.session_state.mode == "devlog":
+        st.markdown("### 📓 개발 일지")
+        st.caption("발행 위치: Secrets의 NOTION_DEVLOG_PARENT_ID 페이지. "
+                   "없으면 운동일지와 같은 페이지(NOTION_PARENT_ID)로 올라갑니다.")
+
+    elif st.session_state.mode == "music":
+        st.markdown("### 🎧 나의 오디오 환경")
+        st.caption("저장해두면 청취 가이드가 내 환경에 맞게 작성됩니다.")
+        p = profile_store.load(profile_store.AUDIO_PROFILE, profile_store.AUDIO_DEFAULT)
+        devices = st.text_area("청취 기기", value=p.get("devices", ""),
+                    placeholder="예: Sony WH-1000XM5 헤드폰, Sonos Era 300 스피커")
+        room = st.text_input("청취 공간", value=p.get("room", ""),
+                    placeholder="예: 15평 거실, 작은 서재, 통근 지하철")
+        preferences = st.text_area("청취 성향", value=p.get("preferences", ""),
+                    placeholder="예: 저음 풍부한 걸 좋아함, 보컬이 선명하게 들리길 원함")
+        notes = st.text_input("기타", value=p.get("notes", ""),
+                    placeholder="예: 이퀄라이저 Flat 세팅 사용")
+        if st.button("💾 저장", use_container_width=True):
+            _save_profile(profile_store.AUDIO_PROFILE,
+                {"devices": devices, "room": room,
+                 "preferences": preferences, "notes": notes})
+
+# ══════════════════════════════════════════════════════════
+# 모드 선택 화면
+# ══════════════════════════════════════════════════════════
+def _resume_draft(mode_name, d):
+    """저장된 초안을 세션에 복원하고 해당 모드로 진입한다."""
+    for k, v in d.items():
+        if k.startswith(("wk_", "dv_")) and v is not None:
+            st.session_state[k] = v
+    st.session_state.mode = mode_name
+    default_step = "w0" if mode_name == "workout" else "d0"
+    st.session_state.step = d.get("step", default_step)
+    st.rerun()
+
+
+if st.session_state.mode is None:
+    now = datetime.now(timezone(timedelta(hours=9)))  # KST
+    weekday = "월화수목금토일"[now.weekday()]
+    st.markdown(f'<div class="date-label">{now.year}년 {now.month}월 {now.day}일 · '
+                f'{weekday}요일</div>', unsafe_allow_html=True)
+    st.markdown('<div class="home-title">오늘 하루를<br>어떤 결로<br>남겨볼까요</div>',
+                unsafe_allow_html=True)
     st.write("")
 
-    # 아티스트 이미지 표시 (앨범 아트는 아직 미선택)
-    if st.session_state.artist_img:
-        col1, col2 = st.columns(2)
-        with col1:
-            st.image(st.session_state.artist_img, use_container_width=True)
-            st.markdown('<div class="img-label">아티스트</div>', unsafe_allow_html=True)
-        with col2:
-            st.markdown("**앨범을 선택하면**\n앨범 아트가 표시됩니다.", unsafe_allow_html=False)
-        st.write("")
+    # 끊긴 세션에서 저장된 초안이 있으면 이어서 쓰기 배너 (상하 헤어라인)
+    for m, label in (("workout", "운동 일지"), ("devlog", "개발 일지")):
+        d = draft.load(m)
+        if d:
+            st.markdown('<hr class="hairline"/>', unsafe_allow_html=True)
+            c1, c2, c3 = st.columns([4, 1.4, 0.7])
+            with c1:
+                st.markdown(f'<div class="resume-note">이어서 쓰던 글이 있어요 · {label} · '
+                            f'{draft.age_minutes(d)}분 전</div>', unsafe_allow_html=True)
+            with c2:
+                if st.button("이어서 쓰기", key=f"resume_{m}", type="primary",
+                             use_container_width=True):
+                    _resume_draft(m, d)
+            with c3:
+                if st.button("🗑", key=f"deldraft_{m}", help="초안 삭제",
+                             use_container_width=True):
+                    draft.clear(m)
+                    st.rerun()
+            st.markdown('<hr class="hairline"/>', unsafe_allow_html=True)
 
-    if not st.session_state.album_versions:
-        with st.spinner("앨범 버전을 찾는 중..."):
-            st.session_state.album_versions = get_album_versions(artist, track, genre)
-        st.rerun()
-
-    for i, ver in enumerate(st.session_state.album_versions):
-        col_card, col_btn = st.columns([5, 1])
-        with col_card:
-            st.markdown(f"""<div class="song-card">
-<div class="song-title">💿 {ver.get('album','')}</div>
-<div class="song-meta">{ver.get('version_info','')}</div>
-<div class="song-reason">{ver.get('feature','')}</div>
-</div>""", unsafe_allow_html=True)
-        with col_btn:
-            st.write("")
-            st.write("")
-            if st.button("선택", key=f"ver_{i}", type="primary"):
-                song = dict(pending)
-                selected_album = ver.get("album", pending.get("album", ""))
-                song["album"]        = selected_album
-                song["version_info"] = ver.get("version_info", "")
-                st.session_state.song = song
-                # 선택된 앨범으로 앨범 아트 업데이트
-                with st.spinner("앨범 아트 로딩 중..."):
-                    st.session_state.album_art = get_album_art(artist, selected_album, track)
-                st.session_state.step = 2
+    st.write("")
+    _MODES = (
+        ("music",   "음악 감상", "분위기를 고르면, 곡과 함께 짧은 에세이를 씁니다", 0),
+        ("workout", "오늘 운동", "기록과 몸 상태를 더해 운동 일지를 남깁니다", "w0"),
+        ("devlog",  "개발 일지", "오늘 만든 것을 담백하게 정리한 기록으로 남깁니다", "d0"),
+    )
+    for col, (mode_key, title, desc, first_step) in zip(st.columns(3), _MODES):
+        with col:
+            st.markdown(f'<div class="mode-card"><div class="mode-title">{title}</div>'
+                        f'<div class="mode-desc">{desc}</div></div>',
+                        unsafe_allow_html=True)
+            if st.button("쓰기 →", key=f"go_{mode_key}", use_container_width=True):
+                st.session_state.mode = mode_key
+                st.session_state.step = first_step
                 st.rerun()
 
-    st.write("")
-    if st.button("← 곡 다시 선택"):
-        st.session_state.album_versions = []
-        st.session_state.pending_song = {}
-        st.session_state.artist_img = None
-        st.session_state.step = 1
-        st.rerun()
+# ══════════════════════════════════════════════════════════
+# 음악 모드
+# ══════════════════════════════════════════════════════════
+elif st.session_state.mode == "music":
+    st.title("음악 감상")
+    st.caption("분위기나 키워드를 입력하면 단계별로 함께 글을 완성해 드립니다.")
+    st.divider()
+    music_flow.run()
 
 # ══════════════════════════════════════════════════════════
-# STEP 2: 음악 정보
+# 운동 모드
 # ══════════════════════════════════════════════════════════
-elif st.session_state.step == 2:
-    song = st.session_state.song
-    st.markdown('<div class="step-pill">📖 2단계 — 음악 정보</div>', unsafe_allow_html=True)
-    st.markdown(f"**선정 곡:** {song.get('artist','')} — {song.get('track','')} ({song.get('album','')})")
-    st.write("")
-
-    show_images()
-    st.write("")
-
-    if not st.session_state.info:
-        with st.spinner("음악 정보를 수집하는 중..."):
-            track_desc = song.get("track", "")
-            if song.get("version_info"):
-                track_desc = f"{track_desc} [{song['version_info']}]"
-            st.session_state.info = get_music_info(
-                song.get("artist",""), song.get("album",""), track_desc)
-        st.rerun()
-
-    st.markdown('<div class="section-label">음악 정보 초안</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="content-box">{st.session_state.info}</div>', unsafe_allow_html=True)
-    st.write("")
-
-    feedback = st.text_input("수정 요청 (없으면 비워두고 다음으로)", key="info_fb",
-        placeholder="예: 더 짧게, 시대적 배경을 더 자세히, 더 쉬운 말로...")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✏️ 수정 요청", disabled=not feedback.strip()):
-            with st.spinner("수정 중..."):
-                st.session_state.info = revise_with_feedback(
-                    "음악 정보", st.session_state.info, feedback, song)
-            st.rerun()
-    with col2:
-        if st.button("다음 단계로 →", type="primary"):
-            st.session_state.step = 3
-            st.rerun()
+elif st.session_state.mode == "workout":
+    st.title("오늘 운동")
+    st.caption("Whoop 데이터와 나의 느낌을 합쳐 운동 일지를 완성해 드립니다.")
+    st.divider()
+    workout_flow.run()
 
 # ══════════════════════════════════════════════════════════
-# STEP 3: 오디오 가이드
+# 개발 일지 모드
 # ══════════════════════════════════════════════════════════
-elif st.session_state.step == 3:
-    song = st.session_state.song
-    st.markdown('<div class="step-pill">🔊 3단계 — 청취 가이드</div>', unsafe_allow_html=True)
-    st.markdown(f"**선정 곡:** {song.get('artist','')} — {song.get('track','')} ({song.get('album','')})")
-    st.write("")
-
-    p = load_profile()
-    if any(p.get(k) for k in ("devices","room","preferences","notes")):
-        st.info(f"🎧 오디오 환경 반영 중: {p.get('devices','')} / {p.get('room','')}")
-
-    if not st.session_state.audio:
-        with st.spinner("청취 가이드를 작성하는 중..."):
-            st.session_state.audio = get_audio_info(
-                song.get("artist",""), song.get("album",""), song.get("track",""))
-        st.rerun()
-
-    st.markdown('<div class="section-label">청취 가이드 초안</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="content-box">{st.session_state.audio}</div>', unsafe_allow_html=True)
-    st.write("")
-
-    feedback = st.text_input("수정 요청 (없으면 비워두고 다음으로)", key="audio_fb",
-        placeholder="예: 더 감성적으로, 추천 환경을 더 구체적으로...")
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✏️ 수정 요청", disabled=not feedback.strip()):
-            with st.spinner("수정 중..."):
-                st.session_state.audio = revise_with_feedback(
-                    "청취 가이드", st.session_state.audio, feedback, song)
-            st.rerun()
-    with col2:
-        if st.button("다음 단계로 →", type="primary"):
-            st.session_state.step = 4
-            st.rerun()
-
-# ══════════════════════════════════════════════════════════
-# STEP 4: 블로그 글
-# ══════════════════════════════════════════════════════════
-elif st.session_state.step == 4:
-    song = st.session_state.song
-    st.markdown('<div class="step-pill">✍️ 4단계 — 블로그 글 작성</div>', unsafe_allow_html=True)
-    st.markdown(f"**선정 곡:** {song.get('artist','')} — {song.get('track','')} ({song.get('album','')})")
-    st.write("")
-
-    if not st.session_state.blog:
-        with st.spinner("블로그 글을 작성하는 중..."):
-            client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
-            version_note = f"\n음반 버전: {song['version_info']}" if song.get("version_info") else ""
-            prompt = f"""당신은 감성적인 음악 블로그 작가입니다.
-오늘의 테마: {st.session_state.mood}
-추천 음악: {song['artist']} - {song['track']} ({song['album']}){version_note}
-[음악 배경 정보] {st.session_state.info}
-[오디오 청취 가이드] {st.session_state.audio}
-700~900자 에세이 스타일로, 소제목 없이 자연스럽게 써주세요.
-마지막은 독자에게 지금 이 음악을 틀어보라는 권유로 마무리해주세요."""
-            msg = client.messages.create(
-                model="claude-opus-4-6", max_tokens=1500,
-                messages=[{"role": "user", "content": prompt}])
-            st.session_state.blog = msg.content[0].text
-        st.rerun()
-
-    show_images()
-    st.write("")
-    st.markdown('<div class="section-label">블로그 글 초안</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="content-box">{st.session_state.blog}</div>', unsafe_allow_html=True)
-    st.write("")
-
-    feedback = st.text_input("수정 요청 (없으면 비워두고 완성)", key="blog_fb",
-        placeholder="예: 더 감성적으로, 첫 문단을 바꿔줘, 마무리를 다르게...")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("✏️ 수정 요청", disabled=not feedback.strip()):
-            with st.spinner("수정 중..."):
-                st.session_state.blog = revise_with_feedback(
-                    "블로그 글", st.session_state.blog, feedback, song)
-            st.rerun()
-    with col2:
-        if st.button("✅ 완성 & 저장", type="primary"):
-            fname = f"blog_{song['artist'].replace(' ', '_')}.txt"
-            fpath = os.path.join(os.path.dirname(__file__), fname)
-            naver_html = make_naver_html(
-                song, st.session_state.blog,
-                st.session_state.artist_img, st.session_state.album_art)
-            with open(fpath, "w", encoding="utf-8") as f:
-                f.write(f"[테마: {st.session_state.mood}]\n[음악: {song['artist']} - {song['track']}]\n\n{st.session_state.blog}")
-            html_fname = fname.replace(".txt", "_naver.html")
-            html_fpath = os.path.join(os.path.dirname(__file__), html_fname)
-            with open(html_fpath, "w", encoding="utf-8") as f:
-                f.write(naver_html)
-            st.success(f"💾 저장 완료!")
-
-            tab1, tab2 = st.tabs(["📄 텍스트 다운로드", "🟢 네이버 블로그 HTML"])
-            with tab1:
-                st.download_button("📥 텍스트 다운로드", data=st.session_state.blog,
-                    file_name=fname, mime="text/plain")
-            with tab2:
-                st.caption("아래 HTML을 복사해서 네이버 블로그 → 글쓰기 → HTML 편집기에 붙여넣으세요.")
-                st.code(naver_html, language="html")
-                st.download_button("📥 HTML 다운로드", data=naver_html,
-                    file_name=html_fname, mime="text/html")
-    with col3:
-        if st.button("↩️ 처음부터"):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
+elif st.session_state.mode == "devlog":
+    st.title("개발 일지")
+    st.caption("개발 메모를 정리해 이미지와 함께 Notion에 발행합니다.")
+    st.divider()
+    devlog_flow.run()
