@@ -16,10 +16,11 @@ from core import config
 
 DEFAULT = """\
 ## 채권 (금리)
+^IRX: 미 3개월(13주)
 fred/DGS2: 미 2년물
-fred/DGS10: 미 10년물
+^TNX: 미 10년물
 fred/DGS20: 미 20년물
-fred/DGS30: 미 30년물
+^TYX: 미 30년물
 
 ## 금·원자재
 GC=F: 금 선물

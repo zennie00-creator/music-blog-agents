@@ -32,6 +32,20 @@ _UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 
 HISTORY_DAYS = 120
 
+# CBOE 금리 지수 (Yahoo 제공) — 구글시트 GOOGLEFINANCE("INDEXCBOE:TNX")/10 과
+# 같은 원천. 값이 금리×10으로 나오는 경우가 있어 fetch 시 자동 정규화한다.
+# FRED(DGS)와 달리 당일 마감치가 바로 나온다 (FRED는 영업일 1일 지연).
+YIELD_INDEX_SYMBOLS = {"^IRX", "^FVX", "^TNX", "^TYX"}
+
+
+def _normalize_yield(rows):
+    """CBOE 금리 지수의 ×10 표기 자동 보정 (금리가 15%를 넘을 일은 없다)."""
+    closes = [r["close"] for r in rows if r["close"]]
+    if closes and sum(closes) / len(closes) > 15:
+        for r in rows:
+            r["close"] = r["close"] / 10
+    return rows
+
 
 # 다수 심볼을 연속 호출하면 Yahoo가 429(rate limit)를 줄 수 있어
 # 두 호스트를 폴백으로 두고 짧게 재시도한다.
@@ -131,7 +145,10 @@ def fetch_history(symbol: str, days: int = HISTORY_DAYS):
             return _fetch_naver(symbol.split("/", 1)[1], days)
         if symbol.startswith("fred/"):
             return _fetch_fred(symbol.split("/", 1)[1], days)
-        return _fetch_yahoo(symbol, days)
+        rows = _fetch_yahoo(symbol, days)
+        if symbol in YIELD_INDEX_SYMBOLS:
+            rows = _normalize_yield(rows)
+        return rows
     except Exception as e:
         print(f"  ⚠️ {symbol} 히스토리 수집 실패: {e}")
         return []
