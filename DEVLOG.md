@@ -2,6 +2,40 @@
 
 일지 에이전트 개발 기록.
 
+## 2026-07-20 — 데이터 소스 교체 (stooq → Yahoo + FRED)
+
+로컬 `--check` 결과 stooq가 봇 차단(JS 검증 챌린지)으로 전멸. 진단으로
+Yahoo가 브라우저 User-Agent만 붙이면 정상 JSON을 주는 것 확인 → 소스 교체.
+
+### 변경
+- `market_data.py`: `_fetch_stooq` 제거, `_fetch_yahoo`(v8 chart API, UA 필수,
+  심볼 URL 인코딩) + `_fetch_fred`(국채 금리 CSV, 무키, cosd로 기간 제한) 추가.
+  fetch_history 분기: (접두사 없음)=Yahoo, `fred/`=FRED, `naver/`=네이버.
+  브라우저 UA로 통일 (Yahoo·FRED·CBOE 모두 UA 요구).
+- `portfolio.md` 심볼 재작성 (Yahoo/FRED):
+  · 채권: fred/DGS2·DGS10·DGS20·DGS30 (미국 상수만기)
+  · 지수: ^GSPC ^NDX ^DJI ^SOX ^KS11 ^VIX / 000001.SS ^HSI
+  · 환율/금/BTC: KRW=X / GC=F / BTC-USD
+  · 주도주: NVDA MU @^SOX, naver/000660(SK하이닉스) @^KS11
+- `yield_curve.py`: stooq 정규식(`{n}usy.b`) → FRED(`fred/DGS{n}`) 인식.
+  한국 일별 국채는 무료 소스가 마땅치 않아 기본 구성에서 제외 → **한미 금리차
+  신호는 당분간 미출력**. portfolio.md에 `krbond/10` 형식으로 일별 소스를
+  추가하면 자동 복원되게 매핑만 열어둠.
+- `put_call.py`: CBOE 403 대응 브라우저 UA 강화 (실패 시 기존대로 우아하게 스킵).
+
+### 검증 (합성/모킹, 실데이터는 사용자 --check로)
+- Yahoo 파서: 실제 v8 응답 구조(None 결측 스킵, ^GSPC/KRW=X URL 인코딩) 통과
+- FRED 파서: CSV 결측('.') 스킵 통과
+- fetch_history 라우팅 3소스 분기 통과
+- 금리 커브: FRED 인식 + 2s10s 역전 + 한국물 유무에 따른 한미차 토글 통과
+- 전체 파이프라인: 18개 자산 수집 → 대시보드/5개 신호/차트 8개 정상
+
+### 아침 확인 사항 (사용자)
+- `git pull` 후 `python invest.py --check` → Yahoo/FRED 실동작 확인
+- Yahoo가 로컬 curl에선 UA로 됐으니 파이썬 requests도 될 것으로 예상
+- CBOE Put/Call은 UA로도 막히면 알려줄 것 (대체 소스 검토)
+- Notion은 여전히 데이터베이스 생성 + integration 연결 필요 (별개 이슈)
+
 ## 2026-07-19 (6) — 뉴스·오피니언 소스 지정 (sources.md)
 
 - 오해 정리: CNN은 뉴스가 아니라 공포·탐욕 지수 전용. 뉴스 수집은 Grok

@@ -5,25 +5,38 @@
 - 10s30s (미 30년-10년): 장기 기대·수급 (재정 우려 시 스티프닝)
 - 한미 10년 금리차: 역전 폭 확대는 자본 유출·원화 약세 압력
 
-portfolio.md의 채권 심볼(stooq 형식 `{만기}usy.b` / `{만기}kry.b`)을 자동 인식한다.
+채권 심볼 인식:
+- 미국: FRED 상수만기 `fred/DGS2` `fred/DGS10` `fred/DGS20` `fred/DGS30`
+- 한국: `fred/IRLTLT01KRM156N`(월별) 또는 naver 시장지표 — 일별 무료 소스가
+  마땅치 않아 현재 기본 구성에서 제외. 한국 일별 10년물을 portfolio.md에
+  `krbond/...` 등으로 추가하면 아래 매핑에 등록해 한미 금리차를 살릴 수 있다.
 """
 import re
 
 TITLE = "금리 커브 · 한미 금리차"
 
-_BOND = re.compile(r"^(\d+)(us|kr)y\.b$")
+# FRED 미국채 상수만기: fred/DGS{만기}
+_FRED_US = re.compile(r"^fred/DGS(\d+)$")
+# 한국 일별 국채 심볼(사용자가 추가할 경우): krbond/{만기}
+_KR = re.compile(r"^krbond/(\d+)$")
 LOOKBACK = 20  # 20거래일 전 대비 변화
 
 
 def _bond_yields(ctx):
     out = {}
     for sym, rows in ctx["histories"].items():
-        m = _BOND.match(sym)
-        if not m or len(rows) < 2:
+        if len(rows) < 2:
+            continue
+        mus, mkr = _FRED_US.match(sym), _KR.match(sym)
+        if mus:
+            key = ("us", int(mus.group(1)))
+        elif mkr:
+            key = ("kr", int(mkr.group(1)))
+        else:
             continue
         closes = [r["close"] for r in rows]
         ago = closes[-(LOOKBACK + 1)] if len(closes) > LOOKBACK else closes[0]
-        out[(m.group(2), int(m.group(1)))] = {"now": closes[-1], "ago": ago}
+        out[key] = {"now": closes[-1], "ago": ago}
     return out
 
 
