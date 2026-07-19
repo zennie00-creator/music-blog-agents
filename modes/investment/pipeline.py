@@ -28,7 +28,13 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
 
     print("\n✍️ [3/4] Claude - 투자 일지 작성 중...")
-    journal = write_journal(today, data_md, analysis, memo)
+    thesis = ""
+    thesis_path = os.path.join(config.ROOT_DIR, "thesis.md")
+    if os.path.exists(thesis_path):
+        with open(thesis_path, encoding="utf-8") as f:
+            thesis = f.read()
+        print("  📌 thesis.md 반영 (나의 투자 전제)")
+    journal = write_journal(today, data_md, analysis, memo, thesis=thesis)
 
     result = {"date": today, "journal": journal, "notion_url": "", "local_path": ""}
 

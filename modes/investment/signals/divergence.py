@@ -8,6 +8,8 @@
 기울기를 '기간 전체 변화율(%)'로 정규화해 비교한다.
 """
 
+TITLE = "가격-거래량 다이버전스 (매도/비중조절 신호, 최근 15거래일)"
+
 # 추세 판정 임계값 (기간 전체 변화율 기준)
 PRICE_TREND_PCT = 2.0    # 가격: ±2% 이상이면 추세로 인정
 VOLUME_TREND_PCT = 10.0  # 거래량: ±10% 이상이면 추세로 인정 (노이즈가 커서 넉넉하게)
@@ -72,3 +74,21 @@ def detect(rows, window: int = 15):
         "volume_trend_pct": round(vol_trend, 2),
         "window": window,
     }
+
+
+def run(ctx):
+    lines = [f"### {TITLE}"]
+    found = False
+    for sym, rows in ctx["histories"].items():
+        div = detect(rows)
+        if not div:
+            continue
+        found = True
+        name = ctx["names"].get(sym, sym)
+        lines.append(
+            f"- {name}: 가격 추세 {div['price_trend_pct']:+.1f}% / "
+            f"거래량 추세 {div['volume_trend_pct']:+.1f}% → {div['label']}"
+        )
+    if not found:
+        lines.append("- (거래량 데이터 부족으로 판정 불가)")
+    return "\n".join(lines)

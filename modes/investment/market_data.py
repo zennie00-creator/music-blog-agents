@@ -1,9 +1,11 @@
-"""시장 데이터 수집 — API 키 없이 받을 수 있는 무료 소스 사용.
+"""시장 데이터 수집 레이어 — API 키 없이 받을 수 있는 무료 소스 사용.
 
-- 일별 시세(종가·거래량): Stooq 히스토리 CSV — 키 불필요.
-  히스토리를 받는 이유: ① 등락률을 전일 종가 대비로 정확히 계산,
-  ② 가격-거래량 다이버전스 판정(divergence.py)에 추세 데이터가 필요.
-- 공포·탐욕 지수: CNN Fear & Greed — 키 불필요 (실패해도 파이프라인은 계속)
+- 일별 시세(종가·거래량): Stooq 히스토리 CSV. 히스토리를 받는 이유:
+  ① 등락률을 전일 종가 대비로 정확히 계산, ② 신호 모듈(다이버전스·반등
+  품질·RSI 등)에 추세 데이터가 필요.
+- 공포·탐욕 지수: CNN Fear & Greed.
+
+신호 판정 자체는 modes/investment/signals/ 패키지가 담당한다.
 """
 import csv
 import io
@@ -12,7 +14,8 @@ from datetime import date, timedelta
 
 import requests
 
-from modes.investment import divergence
+from modes.investment import signals
+from modes.investment.indicators import rsi_series
 
 # 기본 워치리스트: (stooq 심볼, 표시 이름)
 # .env의 WATCHLIST로 교체 가능. 형식: "심볼:이름,심볼:이름,..."
@@ -45,7 +48,7 @@ def watchlist():
     return items or DEFAULT_WATCHLIST
 
 
-def fetch_history(symbol: str, days: int = 90):
+def fetch_history(symbol: str, days: int = 120):
     """Stooq에서 일별 시세 히스토리를 받는다 (과거→최신 순). 실패 시 []."""
     d2 = date.today()
     d1 = d2 - timedelta(days=days)
@@ -83,51 +86,42 @@ def fetch_fear_greed():
         return None
 
 
-def collect() -> str:
-    """워치리스트 전체를 수집해 대시보드 표 + 다이버전스 신호 마크다운으로 반환."""
-    dash_rows = []   # (이름, 종가, 등락률, 거래량, 날짜)
-    signals = []     # (이름, divergence dict)
-
+def collect_context() -> dict:
+    """워치리스트 히스토리 + 심리 지표를 한 번 수집해 신호 모듈들과 공유."""
+    ctx = {"histories": {}, "names": {}}
     for sym, name in watchlist():
         hist = fetch_history(sym)
-        if len(hist) < 2:
-            continue
-        last, prev = hist[-1], hist[-2]
-        chg = (last["close"] - prev["close"]) / prev["close"] * 100 if prev["close"] else 0.0
-        vol = f"{last['volume']:,.0f}" if last["volume"] else ""
-        dash_rows.append((name, f"{last['close']:,.2f}", f"{chg:+.2f}%", vol, last["date"]))
+        if len(hist) >= 2:
+            ctx["histories"][sym] = hist
+            ctx["names"][sym] = name
+    ctx["fear_greed"] = fetch_fear_greed()
+    return ctx
 
-        div = divergence.detect(hist)
-        if div:
-            signals.append((name, div))
 
+def dashboard_md(ctx) -> str:
+    """종가·등락률·거래량·RSI 대시보드 표."""
     lines = ["### 오늘의 시장 대시보드"]
-    if dash_rows:
-        lines.append("| 지표 | 종가 | 전일 대비 | 거래량 | 기준일 |")
-        lines.append("| --- | ---: | ---: | ---: | --- |")
-        for name, close, chg, vol, d in dash_rows:
-            lines.append(f"| {name} | {close} | {chg} | {vol} | {d} |")
-    else:
+    if not ctx["histories"]:
         lines.append("- (시세 데이터 수집 실패)")
+    else:
+        lines.append("| 지표 | 종가 | 전일 대비 | 거래량 | RSI(14) | 기준일 |")
+        lines.append("| --- | ---: | ---: | ---: | ---: | --- |")
+        for sym, hist in ctx["histories"].items():
+            last, prev = hist[-1], hist[-2]
+            chg = (last["close"] - prev["close"]) / prev["close"] * 100 if prev["close"] else 0.0
+            vol = f"{last['volume']:,.0f}" if last["volume"] else ""
+            rsi = rsi_series([r["close"] for r in hist])[-1]
+            rsi_s = f"{rsi:.0f}" if rsi is not None else ""
+            lines.append(f"| {ctx['names'][sym]} | {last['close']:,.2f} | {chg:+.2f}% "
+                         f"| {vol} | {rsi_s} | {last['date']} |")
 
-    fg = fetch_fear_greed()
+    fg = ctx.get("fear_greed")
     if fg:
         lines.append(f"\nCNN 공포·탐욕 지수: {fg['score']} ({fg['rating']})")
-
-    lines.append("\n### 가격-거래량 다이버전스 신호 (최근 15거래일 추세)")
-    if signals:
-        flagged = False
-        for name, div in signals:
-            mark = div["label"]
-            lines.append(
-                f"- {name}: 가격 추세 {div['price_trend_pct']:+.1f}% / "
-                f"거래량 추세 {div['volume_trend_pct']:+.1f}% → {mark}"
-            )
-            if div["signal"] != "none":
-                flagged = True
-        if not flagged:
-            lines.append("- 모든 관찰 대상에서 뚜렷한 다이버전스 없음")
-    else:
-        lines.append("- (거래량 데이터 부족으로 판정 불가)")
-
     return "\n".join(lines)
+
+
+def collect() -> str:
+    """대시보드 + 등록된 모든 시장 신호를 마크다운으로 반환."""
+    ctx = collect_context()
+    return dashboard_md(ctx) + "\n\n" + signals.run_all(ctx)
