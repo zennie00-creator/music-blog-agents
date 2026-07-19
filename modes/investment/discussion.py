@@ -19,6 +19,7 @@ from datetime import datetime
 
 from core import config
 from core.llm import ask_claude, ask_grok
+from modes.investment import sources
 
 INSIGHTS_PATH = os.path.join(config.ROOT_DIR, "insights.md")
 STATE_DIR = os.path.join(config.ROOT_DIR, "discussions")
@@ -148,7 +149,8 @@ def _archive(state, summary: str):
 
 def ask_once(question: str, thesis: str = "") -> str:
     """단발 리서치 질문 (--ask). Grok 답변을 insights.md에 기록."""
-    answer = ask_grok(GROK_SYSTEM, question, live_search=True)
+    answer = ask_grok(GROK_SYSTEM + "\n\n" + sources.prompt_block(), question,
+                      live_search=True, x_handles=sources.x_handles())
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
     with open(INSIGHTS_PATH, "a", encoding="utf-8") as f:
         f.write(f"\n\n---\n\n# {stamp} — 단발 질문\n\n**[나]** {question}\n\n**[Grok]** {answer}\n")
@@ -174,9 +176,10 @@ def discuss(topic: str, thesis: str = ""):
 
         print("🔍 Grok 분석 중...")
         grok_answer = ask_grok(
-            GROK_SYSTEM,
+            GROK_SYSTEM + "\n\n" + sources.prompt_block(),
             f"{_context(state, thesis)}\n\n마지막 발언에 대해 최신 데이터를 근거로 답하세요.",
             live_search=True,
+            x_handles=sources.x_handles(),
         )
         state["messages"].append(["Grok", grok_answer])
         print(f"\n[Grok]\n{grok_answer}\n")

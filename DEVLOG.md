@@ -2,6 +2,25 @@
 
 일지 에이전트 개발 기록.
 
+## 2026-07-19 (6) — 뉴스·오피니언 소스 지정 (sources.md)
+
+- 오해 정리: CNN은 뉴스가 아니라 공포·탐욕 지수 전용. 뉴스 수집은 Grok
+  라이브 검색 담당인데, 지금까지는 '어디를 볼지' 지정이 없었음.
+- `sources.md` (gitignore, example 커밋): 우선 참고 매체 + X 계정 + 뉴스레터.
+  기본 라인업(벤치마크): Bloomberg/CNBC/Reuters/WSJ/FT + 국내(연합인포맥스 등),
+  X는 @markminervini(모멘텀/스테이지), @dylan522p(SemiAnalysis 반도체),
+  @dnystedt(아시아 반도체), @charliebilello, @LizAnnSonders, @KobeissiLetter,
+  뉴스레터는 SemiAnalysis·The Transcript.
+- 주입 경로 2개: ① 소스 전체 텍스트를 Grok 시스템 프롬프트에 '우선 참고'로,
+  ② X 핸들은 xAI search_parameters의 `included_x_handles`로 직접 전달
+  (최대 10개, 스키마 거절 시 기본 검색 자동 폴백 — core/llm.py).
+- 모닝 브리핑에 '## 주요 목소리' 섹션 추가: 지정 계정·뉴스레터의 지난 24시간
+  핵심 발언 2~4개 (발언자 명시). --ask/--discuss의 Grok 호출에도 동일 적용.
+- 페이월(블룸버그 등) 원문 스크래핑은 하지 않음 — Grok 검색이 헤드라인·요지
+  수준에서 반영. Substack도 공개 글 위주.
+- 참고: Minervini의 VCP(변동성 수축 + 거래량 드라이업 후 돌파)는 반등품질/RS
+  신호와 철학이 맞닿음 — 'VCP 수축 감지'를 향후 신호 후보로 기록.
+
 ## 2026-07-19 (5) — 하루 두 번 리듬 + GitHub Actions 배포
 
 ### 아침/오후 분리 (pipeline.py)
