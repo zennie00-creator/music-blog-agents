@@ -90,13 +90,20 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
     print(data_md)
 
     print("\n🔍 [2/3] Grok - 시장·테크 분석 중..." + (" (전제 상태 보드 포함)" if thesis else ""))
-    analysis = analyze_market(today, data_md, thesis=thesis)
-    print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
+    try:
+        analysis = analyze_market(today, data_md, thesis=thesis)
+        print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
+    except Exception as e:
+        print(f"  ⚠️ Grok 분석 실패 (건너뜀): {e}")
+        analysis = "## 시장 브리핑\n(Grok 분석 생성에 실패해 데이터·신호만 수록)"
 
     brief = f"# 📊 모닝 브리핑 — {today}\n\n{data_md}\n\n{analysis}"
-    charts_md = charts.charts_markdown(ctx)
-    if charts_md:
-        brief += "\n\n## 차트\n" + charts_md
+    try:
+        charts_md = charts.charts_markdown(ctx)
+        if charts_md:
+            brief += "\n\n## 차트\n" + charts_md
+    except Exception as e:
+        print(f"  ⚠️ 차트 생성 실패 (건너뜀): {e}")
 
     result = {"date": today, "brief": brief, "notion_url": "", "local_path": ""}
 
@@ -109,9 +116,12 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
 
     if publish:
         print("\n📤 [3/3] Notion 발행 중...")
-        url = publish_page(f"📊 모닝 브리핑 — {today}", brief)
-        result["notion_url"] = url
-        print(f"✅ 발행 완료: {url}")
+        try:
+            url = publish_page(f"📊 모닝 브리핑 — {today}", brief)
+            result["notion_url"] = url
+            print(f"✅ 발행 완료: {url}")
+        except Exception as e:
+            print(f"  ❌ Notion 발행 실패 (로컬 저장은 완료): {e}")
     else:
         print("\n⏭️ [3/3] Notion 발행 건너뜀 (--no-publish)")
 
