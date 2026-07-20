@@ -149,19 +149,34 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
         analysis = brief["analysis"]
     else:
         print("\n🔍 [2/4] Grok - 시장·테크 분석 중... (아침 브리핑 없음 → 즉석 실행)")
-        analysis = analyze_market(today, data_md, thesis=thesis)
-        print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
+        try:
+            analysis = analyze_market(today, data_md, thesis=thesis)
+            print(analysis[:500] + ("..." if len(analysis) > 500 else ""))
+        except Exception as e:
+            print(f"  ⚠️ Grok 분석 실패 (건너뜀): {e}")
+            analysis = "## 시장 브리핑\n(Grok 분석 생성에 실패해 데이터·신호만 수록)"
 
     trades = load_trades()
     if trades:
         print(f"  🧾 최근 매매 기록 반영 ({len(trades.splitlines())}건)")
     print("\n✍️ [3/4] Claude - 투자 일지 작성 중...")
-    journal = write_journal(today, data_md, analysis, memo, thesis=thesis, trades=trades)
+    try:
+        journal = write_journal(today, data_md, analysis, memo, thesis=thesis, trades=trades)
+    except Exception as e:
+        # Claude 실패 시에도 데이터·신호·분석·메모는 발행 (일지 본문만 대체)
+        print(f"  ⚠️ Claude 일지 작성 실패 (데이터·분석만 수록): {e}")
+        memo_md = f"\n\n## 오늘의 메모\n{memo}" if memo else ""
+        journal = (f"# 📈 투자 일지 — {today}\n\n"
+                   f"(Claude 일지 생성에 실패해 데이터·신호·Grok 분석만 수록)\n\n"
+                   f"{data_md}\n\n{analysis}{memo_md}")
 
     # 차트는 일지 생성 후에 붙인다 (LLM 토큰 소모 없음, Notion에서 이미지로 렌더)
-    charts_md = charts.charts_markdown(ctx)
-    if charts_md:
-        journal += "\n\n## 차트\n" + charts_md
+    try:
+        charts_md = charts.charts_markdown(ctx)
+        if charts_md:
+            journal += "\n\n## 차트\n" + charts_md
+    except Exception as e:
+        print(f"  ⚠️ 차트 생성 실패 (건너뜀): {e}")
 
     result = {"date": today, "journal": journal, "notion_url": "", "local_path": ""}
 
@@ -171,9 +186,12 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
 
     if publish:
         print("\n📤 [4/4] Notion 발행 중...")
-        url = publish_page(f"📈 투자 일지 — {today}", journal)
-        result["notion_url"] = url
-        print(f"✅ 발행 완료: {url}")
+        try:
+            url = publish_page(f"📈 투자 일지 — {today}", journal)
+            result["notion_url"] = url
+            print(f"✅ 발행 완료: {url}")
+        except Exception as e:
+            print(f"  ❌ Notion 발행 실패 (로컬 저장은 완료): {e}")
     else:
         print("\n⏭️ [4/4] Notion 발행 건너뜀 (--no-publish)")
 
