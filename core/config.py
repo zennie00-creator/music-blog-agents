@@ -29,7 +29,9 @@ ROOT_DIR = _ROOT
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-opus-4-8")
 XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
-GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4")
+# grok-4는 스냅숏이 은퇴하면 410 Gone을 준다. -latest 별칭은 항상 최신
+# grok-4 스냅숏을 가리켜 은퇴에 안전하다. (은퇴 시 llm.py가 /v1/models로 자동 복구)
+GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4-latest")
 
 # Notion
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
