@@ -45,8 +45,17 @@ def markdown_to_blocks(md: str):
             blocks.append({"type": "divider", "divider": {}})
         elif stripped.startswith("![") and "](" in stripped and stripped.endswith(")"):
             url = stripped[stripped.index("](") + 2:-1]
-            blocks.append({"type": "image",
-                           "image": {"type": "external", "external": {"url": url}}})
+            # Notion external image URL은 과도하게 길면 400으로 거부된다.
+            # QuickChart URL이 2000자를 넘는 경우가 있어 안전하게 링크 문단으로 대체.
+            if len(url) <= 1900:
+                blocks.append({"type": "image",
+                               "image": {"type": "external", "external": {"url": url}}})
+            else:
+                label = stripped[2:stripped.index("](")] or "차트"
+                blocks.append({"type": "paragraph", "paragraph": {"rich_text": [
+                    {"type": "text", "text": {"content": f"{label}: ", }},
+                    {"type": "text", "text": {"content": "차트 보기", "link": {"url": url}}},
+                ]}})
         else:
             blocks.append({"type": "paragraph", "paragraph": {"rich_text": _rich_text(stripped)}})
     return blocks
