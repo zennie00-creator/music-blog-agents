@@ -95,8 +95,18 @@ def _fetch_fred(series: str, days: int):
     """FRED CSV — 국채 금리 등 매크로 시계열 (무키, 거래량 없음)."""
     cosd = (date.today() - timedelta(days=days + 30)).strftime("%Y-%m-%d")
     url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series}&cosd={cosd}"
-    r = requests.get(url, headers=_UA, timeout=30)
-    r.raise_for_status()
+    # Actions에서 FRED 응답이 느려 read timeout이 나는 경우가 있어 넉넉히 + 재시도
+    last = None
+    for attempt in range(3):
+        try:
+            r = requests.get(url, headers=_UA, timeout=60)
+            r.raise_for_status()
+            break
+        except requests.RequestException as e:
+            last = e
+            time.sleep(2 * (attempt + 1))
+    else:
+        raise last
     reader = csv.reader(io.StringIO(r.text))
     next(reader, None)  # 헤더: observation_date,SERIES
     rows = []

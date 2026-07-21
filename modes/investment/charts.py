@@ -9,6 +9,8 @@
 import json
 import urllib.parse
 
+import requests
+
 _BLOCKS = "▁▂▃▄▅▆▇█"
 
 
@@ -62,8 +64,29 @@ def quickchart_url(title: str, rows, days: int = 60, points: int = 40,
                        "xAxes": [{"ticks": {"maxTicksLimit": 10}}]},
         },
     }
+    # 인라인 URL은 종종 2000자를 넘어 Notion 이미지/링크 한도(≤2000)에 걸린다.
+    # QuickChart 단축 URL API로 짧은 주소를 받고, 실패 시 인라인 URL로 폴백.
+    short = _short_chart_url(config, width, height)
+    if short:
+        return short
     c = urllib.parse.quote(json.dumps(config, separators=(",", ":"), ensure_ascii=False))
     return f"https://quickchart.io/chart?w={width}&h={height}&c={c}"
+
+
+def _short_chart_url(config, width, height):
+    """QuickChart create API로 짧은 이미지 URL 발급 (실패 시 None)."""
+    try:
+        r = requests.post(
+            "https://quickchart.io/chart/create",
+            json={"chart": config, "width": width, "height": height,
+                  "backgroundColor": "white"},
+            timeout=20,
+        )
+        r.raise_for_status()
+        return r.json().get("url") or None
+    except Exception as e:
+        print(f"  ⚠️ 차트 단축 URL 실패 (인라인 폴백): {e}")
+        return None
 
 
 CHART_SECTION_KEYWORDS = ("지수", "섹터", "주도주")
