@@ -61,6 +61,42 @@ def markdown_to_blocks(md: str):
     return blocks
 
 
+def _request(method: str, url: str, payload):
+    """Notion 요청. 실패 시 응답 본문(원인 설명)을 포함해 예외를 던진다.
+
+    Notion의 4xx는 body의 message 필드에 정확한 원인이 담겨 있는데
+    raise_for_status()는 이를 버려서 디버깅이 불가능하다.
+    """
+    r = requests.request(method, url, headers=_headers(), json=payload, timeout=60)
+    if not r.ok:
+        detail = r.text[:600].replace("\n", " ")
+        raise RuntimeError(f"Notion {r.status_code} {method} {url.rsplit('/', 2)[-1]}: {detail}")
+    return r.json()
+
+
+def _append_blocks(page_id: str, blocks):
+    """블록을 100개 배치로 append. 배치가 실패하면 절반씩 나눠 재시도해
+    문제 블록(예: Notion이 거부하는 이미지 URL)만 건너뛰고 나머지는 살린다."""
+    url = f"{_API}/blocks/{page_id}/children"
+
+    def _append_batch(batch):
+        if not batch:
+            return
+        try:
+            _request("PATCH", url, {"children": batch})
+        except RuntimeError as e:
+            if len(batch) == 1:
+                btype = batch[0].get("type", "?")
+                print(f"  ⚠️ Notion 블록 1개 건너뜀 ({btype}): {e}")
+                return
+            mid = len(batch) // 2
+            _append_batch(batch[:mid])  # 순서 유지: 왼쪽 먼저
+            _append_batch(batch[mid:])
+
+    for i in range(0, len(blocks), 100):
+        _append_batch(blocks[i:i + 100])
+
+
 def _title_property_name(database_id: str) -> str:
     """데이터베이스의 title 속성 이름을 조회 (DB마다 '이름'/'Name' 등 제각각)."""
     r = requests.get(f"{_API}/databases/{database_id}", headers=_headers(), timeout=30)
@@ -72,7 +108,12 @@ def _title_property_name(database_id: str) -> str:
 
 
 def publish_page(title: str, markdown_body: str, database_id: str = "") -> str:
-    """마크다운 본문을 Notion 데이터베이스에 새 페이지로 발행하고 URL을 반환."""
+    """마크다운 본문을 Notion 데이터베이스에 새 페이지로 발행하고 URL을 반환.
+
+    제목만으로 먼저 페이지를 만든 뒤 본문 블록을 append한다. 이렇게 하면
+    본문 블록 하나가 잘못돼도(예: Notion이 거부하는 차트 이미지 URL) 페이지는
+    반드시 생성되고, 문제 블록만 건너뛴다. (이전에는 400 하나로 전체 실패)
+    """
     database_id = database_id or config.NOTION_DATABASE_ID
     if not database_id:
         raise RuntimeError("NOTION_DATABASE_ID가 설정되지 않았습니다 (.env 확인)")
@@ -80,25 +121,14 @@ def publish_page(title: str, markdown_body: str, database_id: str = "") -> str:
     blocks = markdown_to_blocks(markdown_body)
     title_prop = _title_property_name(database_id)
 
-    payload = {
+    # 1) 제목만으로 페이지 생성 — 본문 블록 문제와 분리 (실패하면 원인이 예외에 담김)
+    page = _request("POST", f"{_API}/pages", {
         "parent": {"database_id": database_id},
         "properties": {title_prop: {"title": _rich_text(title)}},
-        "children": blocks[:100],  # 페이지 생성 시 children은 100블록 제한
-    }
-    r = requests.post(f"{_API}/pages", headers=_headers(), json=payload, timeout=60)
-    r.raise_for_status()
-    page = r.json()
+    })
     page_id = page["id"]
 
-    # 100블록 초과분은 append API로 나눠서 추가
-    rest = blocks[100:]
-    for i in range(0, len(rest), 100):
-        r = requests.patch(
-            f"{_API}/blocks/{page_id}/children",
-            headers=_headers(),
-            json={"children": rest[i:i + 100]},
-            timeout=60,
-        )
-        r.raise_for_status()
+    # 2) 본문 블록을 배치로 append (문제 블록은 자동 격리)
+    _append_blocks(page_id, blocks)
 
     return page.get("url", "")

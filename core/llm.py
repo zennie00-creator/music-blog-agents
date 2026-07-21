@@ -31,18 +31,16 @@ _XAI_BASE = "https://api.x.ai/v1"
 _RESOLVED_GROK_MODEL = None
 
 
-def _pick_grok_model(model_ids) -> str:
-    """xAI /v1/models 목록에서 채팅용 flagship Grok 모델을 고른다.
+def _rank_grok_models(model_ids):
+    """xAI /v1/models 목록을 채팅용 Grok 우선순위로 정렬한 리스트로 반환.
 
-    은퇴(410)·오타(404)로 설정 모델을 못 쓸 때, 이 키로 실제 사용 가능한
-    모델 중 가장 적합한 것을 자동 선택한다. 이미지·미니·코드 전용은 제외하고
-    grok-4 계열을 우선한다.
+    은퇴(410)·오타(404)로 설정 모델을 못 쓸 때, 이 키로 실제 존재하는
+    모델을 우선순위대로 하나씩 시도하기 위한 후보 목록. 이미지·미니·코드
+    전용은 제외하고 grok-4 계열·정식·reasoning·최신 스냅숏을 우선한다.
     """
     ids = [m for m in model_ids if isinstance(m, str) and m.startswith("grok")]
     bad = ("image", "vision", "mini", "code", "embed")
     chat = [m for m in ids if not any(b in m for b in bad)]
-    if not chat:
-        raise RuntimeError("xAI /v1/models에 사용 가능한 grok 모델이 없습니다")
 
     def tiers(m: str):
         # 낮을수록 선호: grok-4 계열 > 정식(fast 아님) > reasoning > -latest 별칭
@@ -57,11 +55,19 @@ def _pick_grok_model(model_ids) -> str:
     # 그 위에 등급 오름차순 → 등급이 같으면 최신 스냅숏이 앞선다.
     chat.sort(reverse=True)
     chat.sort(key=tiers)
-    return chat[0]
+    return chat
 
 
-def _resolve_grok_model() -> str:
-    """/v1/models를 조회해 현재 사용 가능한 Grok 모델명을 반환 (실패 시 예외)."""
+def _pick_grok_model(model_ids) -> str:
+    """우선순위 1위 Grok 모델 (후보가 없으면 예외)."""
+    ranked = _rank_grok_models(model_ids)
+    if not ranked:
+        raise RuntimeError("xAI /v1/models에 사용 가능한 grok 모델이 없습니다")
+    return ranked[0]
+
+
+def _grok_candidates():
+    """/v1/models를 조회해 우선순위 정렬된 Grok 모델 후보 리스트 반환."""
     r = requests.get(
         f"{_XAI_BASE}/models",
         headers={"Authorization": f"Bearer {config.XAI_API_KEY}"},
@@ -69,7 +75,7 @@ def _resolve_grok_model() -> str:
     )
     r.raise_for_status()
     data = r.json().get("data", [])
-    return _pick_grok_model([m.get("id", "") for m in data])
+    return _rank_grok_models([m.get("id", "") for m in data])
 
 
 def ask_grok(system: str, user: str, live_search: bool = True,
@@ -109,20 +115,44 @@ def ask_grok(system: str, user: str, live_search: bool = True,
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
 
+    _GONE = (404, 410, 422)  # 모델 부재/은퇴/미지원 → 다음 후보 시도
+
     def _call(search_params):
-        """설정 모델로 호출하되, 모델 은퇴/부재(410·404)면 자동 교체 후 재시도."""
+        """설정 모델로 호출하되, 모델이 안 되면 /v1/models 후보를 순서대로 시도.
+
+        grok-4-latest도 grok-4.5도 410을 주는 상황을 겪어, 한 후보에서 멈추지
+        않고 실제로 200이 나오는 모델을 찾을 때까지 순회한다. 성공 모델은 캐시."""
         global _RESOLVED_GROK_MODEL
-        model = _RESOLVED_GROK_MODEL or config.GROK_MODEL
+        if _RESOLVED_GROK_MODEL:
+            return _post(_RESOLVED_GROK_MODEL, search_params)
+
+        # 1) 설정 모델 먼저
         try:
-            return _post(model, search_params)
+            return _post(config.GROK_MODEL, search_params)
         except requests.HTTPError as e:
             code = e.response.status_code if e.response is not None else None
-            if code in (404, 410) and _RESOLVED_GROK_MODEL is None:
-                new_model = _resolve_grok_model()  # /v1/models 실패하면 예외 전파
-                print(f"  ⚠️ Grok 모델 '{model}' 사용 불가({code}) → '{new_model}'로 자동 교체")
-                _RESOLVED_GROK_MODEL = new_model
-                return _post(new_model, search_params)
-            raise
+            if code not in _GONE:
+                raise  # 인증·레이트리밋 등은 후보 순회로 안 풀림
+
+        # 2) /v1/models 후보를 우선순위대로 순회하며 처음 성공하는 모델 채택
+        candidates = _grok_candidates()
+        print(f"  🔎 xAI 사용 가능 Grok 후보: {candidates}")
+        last = None
+        for m in candidates:
+            if m == config.GROK_MODEL:
+                continue
+            try:
+                out = _post(m, search_params)
+                _RESOLVED_GROK_MODEL = m
+                print(f"  ✅ Grok 모델 자동 교체 → '{m}'")
+                return out
+            except requests.HTTPError as e:
+                last = e
+                code = e.response.status_code if e.response is not None else None
+                if code in _GONE:
+                    continue
+                raise  # 모델 문제가 아닌 오류는 즉시 전파
+        raise last or RuntimeError("xAI에서 사용 가능한 Grok 모델을 찾지 못했습니다")
 
     if not live_search:
         return _call(None)
