@@ -57,6 +57,17 @@ def _num(s):
         return None
 
 
+# CBOE 금리지수는 GOOGLEFINANCE가 금리×10으로 준다(TNX 45.4 = 4.54%).
+# 시트에서 이미 ÷10 했으면 값이 ≤15라 건드리지 않음(자동 적응).
+_CBOE_YIELD = {"INDEXCBOE:IRX", "INDEXCBOE:FVX", "INDEXCBOE:TNX", "INDEXCBOE:TYX"}
+
+
+def _norm_price(ticker: str, price):
+    if ticker in _CBOE_YIELD and price is not None and price > 15:
+        return price / 10
+    return price
+
+
 def parse_market_csv(text: str) -> dict:
     """게시 CSV 텍스트 → {티커: {price, changepct, volume}}. 헤더/깨진 줄은 건너뜀."""
     out = {}
@@ -68,7 +79,7 @@ def parse_market_csv(text: str) -> dict:
         if price is None:
             continue  # 헤더행("티커,현재가,...")·미계산행 방어
         out[cells[0]] = {
-            "price": price,
+            "price": _norm_price(cells[0], price),
             "changepct": _num(cells[2]) if len(cells) > 2 else None,
             "volume": (_num(cells[3]) if len(cells) > 3 else None) or 0.0,
         }
@@ -76,15 +87,26 @@ def parse_market_csv(text: str) -> dict:
 
 
 def fetch_snapshot() -> dict:
-    """설정된 CSV URL(들)을 받아 합친 스냅숏. 미설정/실패 시 부분/빈 dict."""
+    """설정된 CSV URL(들)을 받아 합친 스냅숏. 미설정/실패 시 부분/빈 dict.
+
+    미국 시세가 왜 안 들어오는지 로그로 바로 진단되게 각 단계를 출력한다.
+    """
+    urls = _urls()
+    print(f"  🔗 MARKET_CSV_URLS: {len(urls)}개 URL")
     snap = {}
-    for url in _urls():
+    for url in urls:
         try:
             r = requests.get(url, headers=_UA, timeout=30)
+            print(f"    · GET {url[:55]}… → HTTP {r.status_code}, {len(r.text)}바이트")
             r.raise_for_status()
-            snap.update(parse_market_csv(r.text))
+            parsed = parse_market_csv(r.text)
+            if parsed:
+                snap.update(parsed)
+            else:
+                head = r.text[:150].replace("\n", "⏎")
+                print(f"    ⚠️ 0종목 파싱됨 — CSV가 아닐 수 있음. 응답 앞부분: {head!r}")
         except Exception as e:
-            print(f"  ⚠️ 구글시트 CSV 수집 실패({url[:60]}...): {e}")
+            print(f"    ⚠️ 수집 실패: {e}")
     return snap
 
 

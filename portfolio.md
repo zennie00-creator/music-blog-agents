@@ -10,12 +10,11 @@
 주도주는 이름 뒤 `@벤치마크`로 RS 신호 대상 지정. 줄 추가/삭제로 가감.
 ※ gsheet 심볼은 게시 CSV에 그 티커 줄이 있어야 함(GOOGLEFINANCE). 이력은 매일 누적.
 
-## 채권 (금리) — FRED
-fred/DGS3MO: 미 3개월
-fred/DGS2: 미 2년물
-fred/DGS10: 미 10년물
-fred/DGS20: 미 20년물
-fred/DGS30: 미 30년물
+## 채권 (금리) — 구글시트 CBOE 금리지수
+gsheet/INDEXCBOE:IRX: 미 3개월(13주)
+gsheet/INDEXCBOE:FVX: 미 5년물
+gsheet/INDEXCBOE:TNX: 미 10년물
+gsheet/INDEXCBOE:TYX: 미 30년물
 
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
@@ -49,6 +48,11 @@ gsheet/NASDAQ:COIN: 코인베이스
 gsheet/NASDAQ:IBIT: 비트코인 ETF(IBIT)
 gsheet/NASDAQ:SPCX: SPCX
 
+# 채권(위 gsheet/INDEXCBOE:*)은 시트에 이 줄들을 추가해야 값이 들어온다:
+#   B열 티커       C열 =GOOGLEFINANCE(Bn,"price")
+#   INDEXCBOE:IRX  INDEXCBOE:FVX  INDEXCBOE:TNX  INDEXCBOE:TYX
+#   (금리×10로 나와도 코드가 자동으로 ÷10 보정한다)
+#
 # 나중에 시트에 줄만 추가하면 자동 반영되는 것들 (GOOGLEFINANCE 티커):
 #   gsheet/CURRENCY:USDKRW: 원/달러
 #   gsheet/INDEXHANGSENG:HSI: 항셍
