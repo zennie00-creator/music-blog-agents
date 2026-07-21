@@ -281,17 +281,10 @@ def _to_naver_world(ticker: str):
     return ticker + ".O"  # 접두사 없는 것(PLTR 등)은 NASDAQ(.O) 가정
 
 
-def _fetch_naver_world(code: str, days: int):
-    """네이버 해외주식 일봉. Actions IP에서도 동작. 200인데 0행이면 원문을 예외로 노출."""
-    end = _date.today()
-    start = end - timedelta(days=int(days * 1.6) + 10)
-    url = (f"https://api.stock.naver.com/chart/foreign/item/{urllib.parse.quote(code)}/day"
-           f"?startDateTime={start:%Y%m%d}0000&endDateTime={end:%Y%m%d}2359")
-    r = requests.get(url, headers={**_UA, "Referer": "https://m.stock.naver.com/"}, timeout=15)
-    r.raise_for_status()
-    data = r.json()
+def _parse_naver_world(data):
     items = data if isinstance(data, list) else (
-        data.get("priceInfos") or data.get("chart") or data.get("result") or [])
+        data.get("priceInfos") or data.get("chart") or data.get("result")
+        or data.get("dataList") or []) if isinstance(data, dict) else []
     rows = []
     for it in items:
         if not isinstance(it, dict):
@@ -308,23 +301,50 @@ def _fetch_naver_world(code: str, days: int):
                          "volume": float(str(v).replace(",", "") or 0)})
         except ValueError:
             continue
-    if not rows:
-        raise ValueError(f"네이버 파싱 0행 (응답형태 확인): {str(data)[:150]}")
     rows.sort(key=lambda x: x["date"])
-    return rows[-days:] if days else rows
+    return rows
+
+
+def _fetch_naver_world(code: str, days: int):
+    """네이버 해외 일봉. 종목은 /item/, 지수는 /index/ 경로 → 둘 다 시도. 0행이면 원문 노출."""
+    end = _date.today()
+    start = end - timedelta(days=int(days * 1.6) + 10)
+    qs = f"?startDateTime={start:%Y%m%d}0000&endDateTime={end:%Y%m%d}2359"
+    last = "?"
+    for kind in ("item", "index"):
+        url = f"https://api.stock.naver.com/chart/foreign/{kind}/{urllib.parse.quote(code)}/day{qs}"
+        try:
+            r = requests.get(url, headers={**_UA, "Referer": "https://m.stock.naver.com/"}, timeout=15)
+            r.raise_for_status()
+            rows = _parse_naver_world(r.json())
+            if rows:
+                return rows[-days:] if days else rows
+            last = f"{kind}={str(r.json())[:70]}"
+        except requests.HTTPError as e:
+            last = f"{kind}=HTTP{e.response.status_code if e.response is not None else '?'}"
+    raise ValueError(f"네이버 0행 ({last})")
+
+
+def _naver_codes(tk: str):
+    """네이버 후보 코드 리스트. NYSE는 .N 실패 대비 .O도 시도."""
+    base = _to_naver_world(tk)
+    if not base:
+        return []
+    if base.endswith(".N"):
+        return [base, base[:-2] + ".O"]
+    return [base]
 
 
 def _backfill_one(tk: str, days: int):
     """한 티커 이력을 네이버(Actions OK)→stooq→Yahoo 순으로 시도. (rows, 소스명)."""
     from modes.investment import market_data
-    nc = _to_naver_world(tk)
-    if nc:
+    for nc in _naver_codes(tk):
         try:
             rows = _fetch_naver_world(nc, days)
             if len(rows) >= 5:
                 return rows, f"naver:{nc}"
         except Exception as e:
-            print(f"    · naver {nc} 실패 → stooq/yahoo 시도: {e}")
+            print(f"    · naver {nc} 실패: {e}")
     ssym = _to_stooq(tk)
     if ssym:
         try:
