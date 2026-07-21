@@ -28,9 +28,14 @@ def sparkline(values, width: int = 20) -> str:
     return "".join(_BLOCKS[int((v - lo) / (hi - lo) * (len(_BLOCKS) - 1))] for v in vals)
 
 
-def quickchart_url(title: str, rows, days: int = 60, points: int = 40,
-                   width: int = 700, height: int = 360) -> str:
-    """일별 시세 rows → 종가 라인 + 거래량 바 차트 이미지 URL."""
+def quickchart_url(title: str, rows, days: int = 120, points: int = 22,
+                   width: int = 680, height: int = 340) -> str:
+    """일별 시세 rows → 종가 라인 + 거래량 바 차트 이미지 URL.
+
+    가능한 한 '자기완결(self-contained) 인라인 URL'을 쓴다 — QuickChart 단축URL은
+    무료 생성 API의 rate-limit·만료로 Notion에서 이미지가 깨질 수 있어서다.
+    인라인이 Notion 한도(≤~1900자)를 넘을 때만 단축URL로 폴백한다.
+    """
     recent = rows[-days:]
     if len(recent) > points:
         step = len(recent) / points
@@ -49,7 +54,7 @@ def quickchart_url(title: str, rows, days: int = 60, points: int = 40,
     if has_vol:
         datasets.append({
             "type": "bar", "label": "거래량", "data": volumes, "yAxisID": "v",
-            "backgroundColor": "rgba(148,163,184,0.45)",
+            "backgroundColor": "rgba(148,163,184,0.4)",
         })
         y_axes.append({"id": "v", "position": "right",
                        "gridLines": {"display": False}, "ticks": {"beginAtZero": True}})
@@ -61,16 +66,14 @@ def quickchart_url(title: str, rows, days: int = 60, points: int = 40,
             "title": {"display": True, "text": title},
             "legend": {"display": has_vol},
             "scales": {"yAxes": y_axes,
-                       "xAxes": [{"ticks": {"maxTicksLimit": 10}}]},
+                       "xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
         },
     }
-    # 인라인 URL은 종종 2000자를 넘어 Notion 이미지/링크 한도(≤2000)에 걸린다.
-    # QuickChart 단축 URL API로 짧은 주소를 받고, 실패 시 인라인 URL로 폴백.
-    short = _short_chart_url(config, width, height)
-    if short:
-        return short
     c = urllib.parse.quote(json.dumps(config, separators=(",", ":"), ensure_ascii=False))
-    return f"https://quickchart.io/chart?w={width}&h={height}&c={c}"
+    inline = f"https://quickchart.io/chart?w={width}&h={height}&bkg=white&c={c}"
+    if len(inline) <= 1900:
+        return inline  # 안정적인 자기완결 URL
+    return _short_chart_url(config, width, height) or inline
 
 
 def _short_chart_url(config, width, height):

@@ -20,7 +20,7 @@ name: daily-invest
 
 on:
   schedule:
-    - cron: "30 21 * * 1-5"  # UTC 월~금 21:30 = KST 화~토 06:30 (미장 마감 후) → 브리핑
+    - cron: "0 21 * * 1-5"   # UTC 월~금 21:00 = KST 화~토 06:00 목표 (GitHub 지연 감안해 30분 당김) → 브리핑
     - cron: "0 0 * * 6"      # UTC 토 00:00 = KST 토 09:00 → 주간 회고
   workflow_dispatch:
     inputs:
