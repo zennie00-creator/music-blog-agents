@@ -21,6 +21,7 @@ import io
 import json
 import os
 import re
+import urllib.parse
 from datetime import date as _date, timedelta
 
 import requests
@@ -194,6 +195,46 @@ def _to_yahoo(ticker: str):
     return ticker
 
 
+# 구글 티커 → stooq 심볼. stooq CSV는 Actions IP에서도 되는 경우가 많아 우선 시도.
+_STOOQ_MAP = {
+    "INDEXSP:.INX": "^spx", "INDEXNASDAQ:NDX": "^ndx", "INDEXDJX:.DJI": "^dji",
+    "INDEXNASDAQ:SOX": "^sox", "INDEXCBOE:VIX": "^vix", "KRX:KOSPI": "^kospi",
+}
+
+
+def _to_stooq(ticker: str):
+    if ticker in _STOOQ_MAP:
+        return _STOOQ_MAP[ticker]
+    if ticker.startswith("INDEXCBOE:") or ticker.startswith("CURRENCY:"):
+        return None  # 금리·환율은 stooq 매핑 생략 (시트 일봉으로 충분)
+    if ":" in ticker:
+        exch, sym = ticker.split(":", 1)
+        return sym.lower() + ".us" if exch in ("NASDAQ", "NYSE", "NYSEARCA", "BATS", "AMEX") else None
+    return ticker.lower() + ".us"  # PLTR → pltr.us
+
+
+def _fetch_stooq(stooq_sym: str, days: int):
+    """stooq 일봉 CSV → [{date, close, volume}] (과거→최신). 헤더: Date,Open,High,Low,Close,Volume."""
+    url = f"https://stooq.com/q/d/l/?s={urllib.parse.quote(stooq_sym)}&i=d"
+    r = requests.get(url, headers=_UA, timeout=20)
+    r.raise_for_status()
+    text = r.text.strip()
+    if not text or text.lower().startswith("<") or "no data" in text.lower():
+        raise ValueError("stooq 데이터 없음/차단")
+    rows = []
+    reader = csv.reader(io.StringIO(text))
+    header = next(reader, None)
+    for row in reader:
+        if len(row) < 5:
+            continue
+        try:
+            rows.append({"date": row[0], "close": float(row[4]),
+                         "volume": float(row[5]) if len(row) > 5 and row[5] not in ("", "N/A") else 0.0})
+        except ValueError:
+            continue
+    return rows[-days:] if days else rows
+
+
 def _read_by_date():
     by_date = {}
     if os.path.exists(_STORE):
@@ -218,38 +259,56 @@ def _write_by_date(by_date):
         f.write("\n".join(lines) + "\n")
 
 
-def backfill_from_yahoo(days: int = 200):
-    """gsheet/ 티커들의 과거 이력을 Yahoo에서 받아 저장소에 채운다 (로컬 1회 실행용).
+def _backfill_one(tk: str, days: int):
+    """한 티커의 과거 이력을 stooq(우선)→Yahoo 순으로 시도. (rows, 소스명) 반환."""
+    from modes.investment import market_data
+    ssym = _to_stooq(tk)
+    if ssym:
+        try:
+            rows = _fetch_stooq(ssym, days)
+            if len(rows) >= 5:
+                return rows, f"stooq:{ssym}"
+        except Exception as e:
+            print(f"    · stooq {ssym} 실패 → Yahoo 시도: {e}")
+    ysym = _to_yahoo(tk)
+    if ysym:
+        try:
+            return market_data._fetch_yahoo(ysym, days), f"yahoo:{ysym}"
+        except Exception as e:
+            print(f"    · yahoo {ysym} 실패: {e}")
+    return [], ""
 
-    Yahoo는 집 IP에선 되지만 Actions IP는 429로 막히므로 이 명령은 로컬에서 돌린다.
-    기존에 있는 날짜·티커는 보존(오늘 실측 유지)하고 빈 곳만 채운 뒤 커밋하면,
-    Actions의 신호(RSI·추세·반등·RS·VCP)가 즉시 점등된다. 거래량도 함께 채운다.
+
+def backfill_history(days: int = 200):
+    """gsheet/ 티커 과거 이력 백필 — stooq(Actions에서도 됨) 우선, 실패 시 Yahoo(로컬).
+
+    브라우저에서 Actions `backfill` 모드로 돌리면 맥 없이도 stooq로 채워진다.
+    기존 날짜·티커는 보존(오늘 실측 유지), 빈 곳만 채운다. 거래량도 함께.
     """
-    from modes.investment import market_data, portfolio
+    from modes.investment import portfolio
     sections, _ = portfolio.load()
     tickers = [s.split("/", 1)[1] for _, items in sections for s, _ in items
                if s.startswith("gsheet/")]
     by_date = _read_by_date()
     ok = 0
     for tk in tickers:
-        ysym = _to_yahoo(tk)
-        if not ysym:
-            print(f"  ⏭ {tk}: Yahoo 매핑 없음 (건너뜀)")
-            continue
-        try:
-            rows = market_data._fetch_yahoo(ysym, days)
-        except Exception as e:
-            print(f"  ⚠️ {tk}({ysym}) 백필 실패: {e}")
+        rows, src = _backfill_one(tk, days)
+        if not rows:
+            print(f"  ⏭ {tk}: 백필 소스 없음")
             continue
         for r in rows:
             close = _norm_price(tk, r["close"])
             by_date.setdefault(r["date"], {}).setdefault(
                 tk, [close, r.get("volume") or 0.0])
         ok += 1
-        print(f"  ✅ {tk} ({ysym}): {len(rows)}일")
+        print(f"  ✅ {tk} ({src}): {len(rows)}일")
     _write_by_date(by_date)
     print(f"\n백필 완료: {ok}/{len(tickers)}종목 → {_STORE}")
-    print("이제 `git add market_history && git commit && git push` 하면 Actions 신호가 켜집니다.")
+
+
+# 하위호환 별칭 (기존 --backfill 경로)
+def backfill_from_yahoo(days: int = 200):
+    backfill_history(days)
 
 
 def history_for(ticker: str):

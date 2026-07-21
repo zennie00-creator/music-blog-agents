@@ -43,8 +43,8 @@ def main():
 
     if args.backfill:
         from modes.investment import sheet_source
-        print("📥 과거 이력 백필 (Yahoo) — 로컬 IP에서만 동작합니다...")
-        sheet_source.backfill_from_yahoo()
+        print("📥 과거 이력 백필 — stooq(Actions에서도 동작) 우선, 실패 시 Yahoo(로컬)...")
+        sheet_source.backfill_history()
         return
 
     if args.check:
