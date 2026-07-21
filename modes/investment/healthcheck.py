@@ -80,6 +80,9 @@ def run_check():
             _ok(f"Grok ({config.GROK_MODEL}) 연결됨")
         except Exception as e:
             _fail(f"Grok 호출 실패: {e}")
+            print("  🔬 Grok 원인 진단 (엔드포인트별 원응답):")
+            from core.llm import grok_diagnose
+            grok_diagnose()
     else:
         _warn("Grok: 키 없음 — https://console.x.ai 에서 발급 후 .env의 XAI_API_KEY에 설정")
 

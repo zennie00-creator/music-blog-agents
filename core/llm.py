@@ -92,7 +92,11 @@ def ask_grok(system: str, user: str, live_search: bool = True,
     if not config.XAI_API_KEY:
         raise RuntimeError("XAI_API_KEY가 설정되지 않았습니다 (.env 확인)")
 
-    def _post(model, search_params):
+    def _headers():
+        return {"Authorization": f"Bearer {config.XAI_API_KEY}",
+                "Content-Type": "application/json"}
+
+    def _post_chat(model, search_params):
         payload = {
             "model": model,
             "messages": [
@@ -103,17 +107,47 @@ def ask_grok(system: str, user: str, live_search: bool = True,
         }
         if search_params:
             payload["search_parameters"] = search_params
-        r = requests.post(
-            f"{_XAI_BASE}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {config.XAI_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
-            timeout=timeout,
-        )
+        r = requests.post(f"{_XAI_BASE}/chat/completions",
+                          headers=_headers(), json=payload, timeout=timeout)
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
+
+    def _post_responses(model, search_params):
+        """신형 Responses API. chat/completions가 410(엔드포인트 은퇴)일 때 시도."""
+        payload = {
+            "model": model,
+            "input": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "max_output_tokens": max_tokens,
+        }
+        if search_params:
+            payload["search_parameters"] = search_params
+        r = requests.post(f"{_XAI_BASE}/responses",
+                          headers=_headers(), json=payload, timeout=timeout)
+        r.raise_for_status()
+        data = r.json()
+        txt = data.get("output_text")
+        if not txt:  # output 배열에서 텍스트 수집 (형태 방어)
+            parts = []
+            for item in data.get("output", []) or []:
+                for c in (item.get("content") or []) if isinstance(item, dict) else []:
+                    if isinstance(c, dict) and c.get("text"):
+                        parts.append(c["text"])
+            txt = "".join(parts)
+        if not txt:
+            raise ValueError("xAI /responses 응답에서 텍스트를 찾지 못함")
+        return txt.strip()
+
+    def _post(model, search_params):
+        try:
+            return _post_chat(model, search_params)
+        except requests.HTTPError as e:
+            # chat/completions가 410(Gone)이면 엔드포인트 은퇴 가능성 → responses 시도
+            if e.response is not None and e.response.status_code == 410:
+                return _post_responses(model, search_params)
+            raise
 
     _GONE = (404, 410, 422)  # 모델 부재/은퇴/미지원 → 다음 후보 시도
 
@@ -174,3 +208,38 @@ def ask_grok(system: str, user: str, live_search: bool = True,
             else:
                 raise
     return _call({"mode": "auto"})
+
+
+def grok_diagnose():
+    """xAI 원인 진단 — /v1/models · chat/completions · responses 각각의 원응답을 찍는다.
+
+    Grok가 왜 안 되는지(엔드포인트 은퇴? 모델? 권한?) Actions 로그로 확인하기 위함.
+    `python invest.py --check`에서 호출.
+    """
+    if not config.XAI_API_KEY:
+        print("  ❌ XAI_API_KEY 없음"); return
+    h = {"Authorization": f"Bearer {config.XAI_API_KEY}", "Content-Type": "application/json"}
+    # 1) 모델 목록
+    try:
+        r = requests.get(f"{_XAI_BASE}/models", headers=h, timeout=20)
+        ids = [m.get("id") for m in r.json().get("data", [])] if r.ok else []
+        print(f"  · GET /models → {r.status_code} · 모델 {len(ids)}개: {ids[:6]}")
+    except Exception as e:
+        print(f"  · GET /models 실패: {e}")
+        ids = []
+    model = (_rank_grok_models(ids) or ["grok-4"])[0]
+    body = {"model": model, "max_tokens": 8}
+    # 2) chat/completions
+    try:
+        r = requests.post(f"{_XAI_BASE}/chat/completions", headers=h, timeout=30,
+                          json={**body, "messages": [{"role": "user", "content": "ping"}]})
+        print(f"  · POST /chat/completions ({model}) → {r.status_code} · {r.text[:160]}")
+    except Exception as e:
+        print(f"  · POST /chat/completions 실패: {e}")
+    # 3) responses (신형 API)
+    try:
+        r = requests.post(f"{_XAI_BASE}/responses", headers=h, timeout=30,
+                          json={"model": model, "input": "ping", "max_output_tokens": 8})
+        print(f"  · POST /responses ({model}) → {r.status_code} · {r.text[:160]}")
+    except Exception as e:
+        print(f"  · POST /responses 실패: {e}")
