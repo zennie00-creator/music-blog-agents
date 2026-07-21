@@ -19,12 +19,11 @@ import os
 from core import config
 
 DEFAULT = """\
-## 채권 (금리) — FRED
-fred/DGS3MO: 미 3개월
-fred/DGS2: 미 2년물
-fred/DGS10: 미 10년물
-fred/DGS20: 미 20년물
-fred/DGS30: 미 30년물
+## 채권 (금리) — 구글시트 CBOE 금리지수
+gsheet/INDEXCBOE:IRX: 미 3개월(13주)
+gsheet/INDEXCBOE:FVX: 미 5년물
+gsheet/INDEXCBOE:TNX: 미 10년물
+gsheet/INDEXCBOE:TYX: 미 30년물
 
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
