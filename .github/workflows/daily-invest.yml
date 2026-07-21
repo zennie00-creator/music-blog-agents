@@ -27,7 +27,7 @@ on:
       mode:
         description: "실행 모드"
         type: choice
-        options: [brief, journal, weekly, check]
+        options: [brief, journal, weekly, check, backfill]
         default: journal
       memo:
         description: "오늘의 투자 메모 (journal 모드)"
@@ -68,6 +68,8 @@ jobs:
             python invest.py --weekly
           elif [ "$MODE" = "check" ]; then
             python invest.py --check
+          elif [ "$MODE" = "backfill" ]; then
+            python invest.py --backfill
           else
             python invest.py --brief
           fi
