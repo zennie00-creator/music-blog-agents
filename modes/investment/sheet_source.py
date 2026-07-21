@@ -68,20 +68,31 @@ def _norm_price(ticker: str, price):
     return price
 
 
+def _is_ticker(cell: str) -> bool:
+    """티커 셀 판별: 티커 패턴 + 최소 한 글자는 A-Z (빈칸·숫자·한글 제외)."""
+    return bool(_TICKER_RE.match(cell)) and any(c.isalpha() for c in cell)
+
+
 def parse_market_csv(text: str) -> dict:
-    """게시 CSV 텍스트 → {티커: {price, changepct, volume}}. 헤더/깨진 줄은 건너뜀."""
+    """게시 CSV 텍스트 → {티커: {price, changepct, volume}}.
+
+    티커 열을 자동 탐지한다 — 시트 앞에 빈 열이나 종목명 열이 있어도
+    (예: ',INDEXSP:.INX,7443.28,...') 티커 패턴인 첫 셀부터 읽는다.
+    헤더·깨진 줄은 건너뜀.
+    """
     out = {}
     for row in csv.reader(io.StringIO(text)):
         cells = [c.strip() for c in row]
-        if not cells or not _TICKER_RE.match(cells[0]) or not any(c.isalpha() for c in cells[0]):
-            continue
-        price = _num(cells[1]) if len(cells) > 1 else None
+        ti = next((i for i, c in enumerate(cells) if _is_ticker(c)), None)
+        if ti is None:
+            continue  # 티커 없는 줄(헤더·빈줄·종목명만)
+        price = _num(cells[ti + 1]) if len(cells) > ti + 1 else None
         if price is None:
-            continue  # 헤더행("티커,현재가,...")·미계산행 방어
-        out[cells[0]] = {
-            "price": _norm_price(cells[0], price),
-            "changepct": _num(cells[2]) if len(cells) > 2 else None,
-            "volume": (_num(cells[3]) if len(cells) > 3 else None) or 0.0,
+            continue
+        out[cells[ti]] = {
+            "price": _norm_price(cells[ti], price),
+            "changepct": _num(cells[ti + 2]) if len(cells) > ti + 2 else None,
+            "volume": (_num(cells[ti + 3]) if len(cells) > ti + 3 else None) or 0.0,
         }
     return out
 
