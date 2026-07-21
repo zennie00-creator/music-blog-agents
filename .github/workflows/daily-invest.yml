@@ -48,6 +48,7 @@ jobs:
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
       NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       MARKET_CSV_URLS: ${{ secrets.MARKET_CSV_URLS }}  # 구글시트 웹 게시 CSV URL(들), 쉼표 구분
+      USE_GROK: ${{ vars.USE_GROK }}  # Variables에 USE_GROK=0 넣으면 Grok 건너뛰고 Claude로 분석
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

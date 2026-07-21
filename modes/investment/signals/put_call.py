@@ -71,7 +71,8 @@ def run(ctx):
     ratios, err = fetch()
     lines = [f"### {TITLE}"]
     if not ratios:
-        lines.append(f"- ⚠️ 데이터 수집 실패 ({err})")
+        # 무료 CBOE 소스가 자주 막힌다(403). 브리핑엔 조용히 생략하고 진행.
+        lines.append("- (옵션 심리 소스 일시 불가 — 오늘은 생략)")
         return "\n".join(lines)
 
     # total/전체 비율을 우선 찾고, 나머지는 참고로 나열

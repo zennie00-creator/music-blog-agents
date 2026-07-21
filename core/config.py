@@ -32,6 +32,9 @@ XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
 # grok-4는 스냅숏이 은퇴하면 410 Gone을 준다. -latest 별칭은 항상 최신
 # grok-4 스냅숏을 가리켜 은퇴에 안전하다. (은퇴 시 llm.py가 /v1/models로 자동 복구)
 GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4-latest")
+# Grok가 계정 문제로 계속 실패하면 USE_GROK=0 으로 꺼서 바로 Claude 분석 사용
+# (헛된 재시도·요란한 로그 방지). 기본은 켜짐.
+USE_GROK = os.environ.get("USE_GROK", "1").strip().lower() not in ("0", "false", "no", "off")
 
 # 시장 데이터 — 구글시트 웹 게시 CSV URL(들). 쉼표로 여러 개. (Yahoo 429 우회)
 MARKET_CSV_URLS = os.environ.get("MARKET_CSV_URLS", "")
