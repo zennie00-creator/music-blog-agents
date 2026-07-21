@@ -13,6 +13,7 @@
   python invest.py --check                  # 데이터 소스·API 연결 헬스체크
   python invest.py --signal-report          # 신호 성적표 (발생 후 5/20일 수익률)
   python invest.py --weekly                 # 주간 회고 (지난 7일 일지+신호 리뷰)
+  python invest.py --backfill               # (로컬 1회) Yahoo에서 과거 이력 백필 → 신호 즉시 점등
 """
 import argparse
 import sys
@@ -36,7 +37,15 @@ def main():
     p.add_argument("--check", action="store_true", help="데이터 소스·API 연결 헬스체크")
     p.add_argument("--signal-report", action="store_true", help="신호 성적표 출력")
     p.add_argument("--weekly", action="store_true", help="주간 회고 생성·발행")
+    p.add_argument("--backfill", action="store_true",
+                   help="(로컬 1회) Yahoo에서 과거 이력 백필 — gsheet 신호 즉시 점등")
     args = p.parse_args()
+
+    if args.backfill:
+        from modes.investment import sheet_source
+        print("📥 과거 이력 백필 (Yahoo) — 로컬 IP에서만 동작합니다...")
+        sheet_source.backfill_from_yahoo()
+        return
 
     if args.check:
         from modes.investment.healthcheck import run_check
