@@ -27,6 +27,12 @@ DEFAULT = """\
 ## 뉴스레터·서브스택 (공개 글 위주)
 - SemiAnalysis (반도체·AI 인프라 심층)
 - The Transcript (실적 콜 핵심 발췌)
+
+## RSS 피드 (당일 헤드라인 자동 수집 — 이름: URL)
+- CNBC Top: https://www.cnbc.com/id/100003114/device/rss/rss.html
+- CNBC Markets: https://www.cnbc.com/id/10000664/device/rss/rss.html
+- MarketWatch: http://feeds.marketwatch.com/marketwatch/topstories/
+- Investing: https://www.investing.com/rss/news_25.rss
 """
 
 MAX_X_HANDLES = 10  # xAI 검색 파라미터 핸들 수 제한
@@ -55,6 +61,23 @@ def x_handles(text: str = None):
             if m:
                 handles.append(m.group(1))
     return handles[:MAX_X_HANDLES]
+
+
+def rss_feeds(text: str = None):
+    """`## RSS 피드` 섹션의 (이름, URL) 목록. `- 이름: https://...` 형식."""
+    text = text if text is not None else load_text()
+    feeds = []
+    in_rss = False
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("## "):
+            in_rss = "RSS" in s
+            continue
+        if in_rss and s.startswith("-") and "http" in s:
+            m = re.match(r"-\s*(.+?):\s*(https?://\S+)", s)
+            if m:
+                feeds.append((m.group(1).strip(), m.group(2).strip()))
+    return feeds
 
 
 def prompt_block() -> str:
