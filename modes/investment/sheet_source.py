@@ -149,17 +149,38 @@ def _load_store():
 
 
 def _save_today(snapshot: dict, today: str):
-    """오늘 스냅숏을 저장소에 기록 (같은 날짜는 덮어씀)."""
+    """오늘 스냅숏을 저장소에 기록 (같은 날짜는 덮어씀).
+
+    시트의 '현재가'는 장 마감 전이면 직전 미국 장 종가와 같다. 그 값을 오늘로
+    또 저장하면 백필된 직전일과 종가가 중복돼 전일 대비가 0%가 된다. 그래서
+    직전 저장 종가와 같은 종목은 오늘 기록에서 제외한다(새 정보 없음)."""
     if not snapshot:
         return
     os.makedirs(LOG_DIR, exist_ok=True)
-    lines = []
+    lines, existing = [], {}
     if os.path.exists(_STORE):
         with open(_STORE, encoding="utf-8") as f:
-            lines = [ln for ln in f.read().splitlines()
-                     if ln.strip() and json.loads(ln).get("date") != today]
-    prices = {tk: [v["price"], v.get("volume") or 0.0] for tk, v in snapshot.items()}
-    lines.append(json.dumps({"date": today, "prices": prices}, ensure_ascii=False))
+            for ln in f.read().splitlines():
+                if not ln.strip():
+                    continue
+                rec = json.loads(ln)
+                if rec.get("date") == today:
+                    continue  # 오늘 라인은 재작성
+                lines.append(ln)
+                existing[rec["date"]] = rec.get("prices", {})
+    prior_close = {}  # 티커별 '오늘 이전 최신' 종가
+    for d in sorted(existing):
+        for tk, cv in existing[d].items():
+            prior_close[tk] = cv[0] if isinstance(cv, list) else cv
+    prices = {}
+    for tk, v in snapshot.items():
+        c = v["price"]
+        pc = prior_close.get(tk)
+        if pc is not None and round(float(pc), 4) == round(float(c), 4):
+            continue  # 직전 종가와 동일 → 같은 세션, 중복 저장 안 함
+        prices[tk] = [c, v.get("volume") or 0.0]
+    if prices:  # 전부 중복이면 오늘 라인은 만들지 않음
+        lines.append(json.dumps({"date": today, "prices": prices}, ensure_ascii=False))
     with open(_STORE, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 
