@@ -40,6 +40,15 @@ def run_check():
         _ok(f"{name}: 설정됨") if val else _fail(f"{name}: 없음")
 
     print("\n[2] 시세 데이터 (portfolio.md 워치리스트)")
+    if config.MARKET_CSV_URLS:
+        from modes.investment import sheet_source
+        snap = sheet_source.fetch_snapshot()
+        if snap:
+            _ok(f"구글시트 CSV: {len(snap)}종목 수신 (예: {', '.join(list(snap)[:3])} …)")
+        else:
+            _fail("구글시트 CSV: 0종목 — URL·게시 설정 확인 (웹에 게시 → CSV 인지)")
+    else:
+        _warn("MARKET_CSV_URLS 미설정 — 미국 시세는 gsheet/ 심볼로 안 들어옴")
     sections, _ = portfolio.load()
     for title, items in sections:
         print(f"  — {title}")

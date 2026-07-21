@@ -23,7 +23,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from modes.investment import charts, portfolio, signals
+from modes.investment import charts, portfolio, sheet_source, signals
 from modes.investment.indicators import rsi_series
 
 # Yahoo·FRED는 봇 요청에 브라우저 User-Agent를 요구한다.
@@ -141,6 +141,8 @@ def _fetch_naver(code: str, days: int):
 def fetch_history(symbol: str, days: int = HISTORY_DAYS):
     """소스 접두사에 따라 분기해 일별 시세를 받는다 (과거→최신 순). 실패 시 []."""
     try:
+        if symbol.startswith("gsheet/"):
+            return sheet_source.history_for(symbol.split("/", 1)[1])
         if symbol.startswith("naver/"):
             return _fetch_naver(symbol.split("/", 1)[1], days)
         if symbol.startswith("fred/"):
@@ -170,6 +172,7 @@ def fetch_fear_greed():
 def collect_context() -> dict:
     """portfolio.md 기준으로 히스토리 + 심리 지표를 수집해 신호 모듈들과 공유."""
     sections, benchmarks = portfolio.load()
+    sheet_source.refresh()  # 구글시트 스냅숏 1회 수집 + 이력 누적 (gsheet/ 심볼용)
     ctx = {"histories": {}, "names": {}, "sections": [], "benchmarks": benchmarks}
     for title, items in sections:
         syms = []
