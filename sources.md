@@ -15,3 +15,9 @@
 ## 뉴스레터·서브스택 (공개 글 위주)
 - SemiAnalysis (반도체·AI 인프라 심층)
 - The Transcript (실적 콜 핵심 발췌)
+
+## RSS 피드 (당일 헤드라인 자동 수집 — 이름: URL, 줄 추가/삭제로 가감)
+- CNBC Top: https://www.cnbc.com/id/100003114/device/rss/rss.html
+- CNBC Markets: https://www.cnbc.com/id/10000664/device/rss/rss.html
+- MarketWatch: http://feeds.marketwatch.com/marketwatch/topstories/
+- Investing: https://www.investing.com/rss/news_25.rss
