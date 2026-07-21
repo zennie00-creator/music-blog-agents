@@ -175,6 +175,83 @@ def refresh(today: str = ""):
     return _SNAPSHOT
 
 
+# 구글 티커 → Yahoo 심볼 (백필용). 미국 주식은 거래소 접두사만 떼면 됨.
+_YAHOO_MAP = {
+    "INDEXSP:.INX": "^GSPC", "INDEXNASDAQ:NDX": "^NDX", "INDEXDJX:.DJI": "^DJI",
+    "INDEXNASDAQ:SOX": "^SOX", "INDEXCBOE:VIX": "^VIX", "KRX:KOSPI": "^KS11",
+    "INDEXCBOE:IRX": "^IRX", "INDEXCBOE:FVX": "^FVX", "INDEXCBOE:TNX": "^TNX",
+    "INDEXCBOE:TYX": "^TYX", "INDEXHANGSENG:HSI": "^HSI", "CURRENCY:USDKRW": "KRW=X",
+}
+
+
+def _to_yahoo(ticker: str):
+    if ticker in _YAHOO_MAP:
+        return _YAHOO_MAP[ticker]
+    # NASDAQ:NVDA / NYSE:COHR → NVDA / COHR ; 접두사 없는 PLTR → PLTR
+    if ":" in ticker:
+        exch, sym = ticker.split(":", 1)
+        return sym if exch in ("NASDAQ", "NYSE", "NYSEARCA", "BATS", "AMEX") else None
+    return ticker
+
+
+def _read_by_date():
+    by_date = {}
+    if os.path.exists(_STORE):
+        with open(_STORE, encoding="utf-8") as f:
+            for ln in f:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    rec = json.loads(ln)
+                except json.JSONDecodeError:
+                    continue
+                by_date.setdefault(rec["date"], {}).update(rec.get("prices", {}))
+    return by_date
+
+
+def _write_by_date(by_date):
+    os.makedirs(LOG_DIR, exist_ok=True)
+    lines = [json.dumps({"date": d, "prices": by_date[d]}, ensure_ascii=False)
+             for d in sorted(by_date)]
+    with open(_STORE, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def backfill_from_yahoo(days: int = 200):
+    """gsheet/ 티커들의 과거 이력을 Yahoo에서 받아 저장소에 채운다 (로컬 1회 실행용).
+
+    Yahoo는 집 IP에선 되지만 Actions IP는 429로 막히므로 이 명령은 로컬에서 돌린다.
+    기존에 있는 날짜·티커는 보존(오늘 실측 유지)하고 빈 곳만 채운 뒤 커밋하면,
+    Actions의 신호(RSI·추세·반등·RS·VCP)가 즉시 점등된다. 거래량도 함께 채운다.
+    """
+    from modes.investment import market_data, portfolio
+    sections, _ = portfolio.load()
+    tickers = [s.split("/", 1)[1] for _, items in sections for s, _ in items
+               if s.startswith("gsheet/")]
+    by_date = _read_by_date()
+    ok = 0
+    for tk in tickers:
+        ysym = _to_yahoo(tk)
+        if not ysym:
+            print(f"  ⏭ {tk}: Yahoo 매핑 없음 (건너뜀)")
+            continue
+        try:
+            rows = market_data._fetch_yahoo(ysym, days)
+        except Exception as e:
+            print(f"  ⚠️ {tk}({ysym}) 백필 실패: {e}")
+            continue
+        for r in rows:
+            close = _norm_price(tk, r["close"])
+            by_date.setdefault(r["date"], {}).setdefault(
+                tk, [close, r.get("volume") or 0.0])
+        ok += 1
+        print(f"  ✅ {tk} ({ysym}): {len(rows)}일")
+    _write_by_date(by_date)
+    print(f"\n백필 완료: {ok}/{len(tickers)}종목 → {_STORE}")
+    print("이제 `git add market_history && git commit && git push` 하면 Actions 신호가 켜집니다.")
+
+
 def history_for(ticker: str):
     """누적 이력 반환. 2점 미만이면 전일비(%)로 어제 종가를 역산해 보강."""
     if _HISTORY is None:
