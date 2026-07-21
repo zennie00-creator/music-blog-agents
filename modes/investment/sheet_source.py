@@ -279,9 +279,10 @@ def _backfill_one(tk: str, days: int):
     return [], ""
 
 
-def backfill_history(days: int = 200):
+def backfill_history(days: int = 1825):
     """gsheet/ 티커 과거 이력 백필 — stooq(Actions에서도 됨) 우선, 실패 시 Yahoo(로컬).
 
+    기본 5년치(=1825일). 매크로 관점의 장기 추세를 위해 넉넉히 받는다.
     브라우저에서 Actions `backfill` 모드로 돌리면 맥 없이도 stooq로 채워진다.
     기존 날짜·티커는 보존(오늘 실측 유지), 빈 곳만 채운다. 거래량도 함께.
     """

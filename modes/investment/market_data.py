@@ -71,9 +71,16 @@ def _yahoo_get(quoted: str, rng: str):
     raise last_err
 
 
+def _yahoo_range(days: int) -> str:
+    for lim, rng in ((180, "6mo"), (360, "1y"), (740, "2y"), (1900, "5y")):
+        if days <= lim:
+            return rng
+    return "10y"
+
+
 def _fetch_yahoo(symbol: str, days: int):
     """Yahoo Finance v8 chart API. 지수/종목/환율/금/BTC + 거래량."""
-    rng = "1y" if days > 180 else "6mo"
+    rng = _yahoo_range(days)
     quoted = urllib.parse.quote(symbol, safe="")
     result = _yahoo_get(quoted, rng)["chart"]["result"][0]
     ts = result.get("timestamp") or []
