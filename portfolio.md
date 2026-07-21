@@ -1,42 +1,54 @@
 # 포트폴리오 워치리스트
 
-심볼 접두사로 데이터 소스 자동 분기: (없음)=Yahoo, fred/=FRED 국채금리, naver/=네이버.
-채권은 당일치 CBOE 금리지수(^IRX ^TNX ^TYX, ×10 자동보정) + 부족 만기는 FRED(1일 지연).
+심볼 접두사로 데이터 소스 자동 분기:
+- `gsheet/…` 구글시트 웹 게시 CSV (미국 지수·종목·KOSPI — Yahoo 429 우회, Actions에서 안정)
+- `fred/…` FRED 국채 금리 (Actions에서 안정, 1일 지연)
+- `naver/…` 네이버 금융 (한국 개별 종목)
+- (접두사 없음) Yahoo — 로컬(집 IP)에선 되지만 Actions 공용 IP는 429로 막힘
+
+심볼과 이름은 `": "`(콜론+공백)로 구분 — 구글 티커(NASDAQ:NVDA)의 콜론을 보존.
 주도주는 이름 뒤 `@벤치마크`로 RS 신호 대상 지정. 줄 추가/삭제로 가감.
+※ gsheet 심볼은 게시 CSV에 그 티커 줄이 있어야 함(GOOGLEFINANCE). 이력은 매일 누적.
 
-## 채권 (금리)
-^IRX: 미 3개월(13주)
+## 채권 (금리) — FRED
+fred/DGS3MO: 미 3개월
 fred/DGS2: 미 2년물
-^TNX: 미 10년물
+fred/DGS10: 미 10년물
 fred/DGS20: 미 20년물
-^TYX: 미 30년물
-
-## 금·원자재
-GC=F: 금 선물
+fred/DGS30: 미 30년물
 
 ## 지수 — 미국
-^GSPC: S&P 500
-^NDX: 나스닥 100
-^DJI: 다우존스
+gsheet/INDEXSP:.INX: S&P 500
+gsheet/INDEXNASDAQ:NDX: 나스닥 100
+gsheet/INDEXDJX:.DJI: 다우존스
 
 ## 지수 — 한국
-^KS11: 코스피
+gsheet/KRX:KOSPI: 코스피
 
-## 지수 — 중국·기타
-000001.SS: 상해종합
-^HSI: 항셍
-
-## 변동성·환율
-^VIX: VIX
-KRW=X: 원/달러
+## 변동성
+gsheet/INDEXCBOE:VIX: VIX
 
 ## 섹터
-^SOX: 필라델피아 반도체
+gsheet/INDEXNASDAQ:SOX: 필라델피아 반도체
 
-## 주도주
-NVDA: 엔비디아 @^SOX
-MU: 마이크론 @^SOX
-naver/000660: SK하이닉스 @^KS11
+## 주도주 (반도체·AI)
+gsheet/NASDAQ:NVDA: 엔비디아 @gsheet/INDEXNASDAQ:SOX
+gsheet/NASDAQ:MU: 마이크론 @gsheet/INDEXNASDAQ:SOX
+gsheet/NYSE:COHR: 코히런트 @gsheet/INDEXNASDAQ:SOX
+naver/000660: SK하이닉스 @gsheet/KRX:KOSPI
 
-## 크립토
-BTC-USD: 비트코인 (USD)
+## 기술주 (관심)
+gsheet/NASDAQ:AAPL: 애플
+gsheet/NASDAQ:MSFT: 마이크로소프트
+gsheet/NASDAQ:GOOGL: 알파벳
+gsheet/NASDAQ:TSLA: 테슬라
+gsheet/PLTR: 팔란티어
+gsheet/NYSE:JOBY: 조비 에비에이션
+gsheet/NASDAQ:MSTR: 마이크로스트래티지
+gsheet/NASDAQ:COIN: 코인베이스
+gsheet/NASDAQ:IBIT: 비트코인 ETF(IBIT)
+gsheet/NASDAQ:SPCX: SPCX
+
+# 나중에 시트에 줄만 추가하면 자동 반영되는 것들 (GOOGLEFINANCE 티커):
+#   gsheet/CURRENCY:USDKRW: 원/달러
+#   gsheet/INDEXHANGSENG:HSI: 항셍

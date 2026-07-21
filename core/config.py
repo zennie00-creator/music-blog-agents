@@ -33,6 +33,9 @@ XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
 # grok-4 스냅숏을 가리켜 은퇴에 안전하다. (은퇴 시 llm.py가 /v1/models로 자동 복구)
 GROK_MODEL = os.environ.get("GROK_MODEL", "grok-4-latest")
 
+# 시장 데이터 — 구글시트 웹 게시 CSV URL(들). 쉼표로 여러 개. (Yahoo 429 우회)
+MARKET_CSV_URLS = os.environ.get("MARKET_CSV_URLS", "")
+
 # Notion
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
