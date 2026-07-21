@@ -267,13 +267,15 @@ def history_for(ticker: str):
     price = snap["price"]
     vol = snap.get("volume") or 0.0
     chg = snap.get("changepct")
-    synth = []
+    # 전일비(%)가 있으면 어제 종가를 역산, 없으면(#N/A 등) 평행(=오늘값)으로 둔다.
+    # 어느 경우든 2점을 만들어 첫날부터 대시보드에 표시되게 한다 (금리 등).
     if chg is not None and (1 + chg / 100) != 0:
-        prev_close = price / (1 + chg / 100)
-        try:
-            y = (_date.fromisoformat(today) - timedelta(days=1)).isoformat()
-        except ValueError:
-            y = today + "-prev"
-        synth.append({"date": y, "close": round(prev_close, 4), "volume": 0.0})
-    synth.append({"date": today, "close": price, "volume": vol})
-    return synth
+        prev_close = round(price / (1 + chg / 100), 4)
+    else:
+        prev_close = price
+    try:
+        y = (_date.fromisoformat(today) - timedelta(days=1)).isoformat()
+    except ValueError:
+        y = today + "-prev"
+    return [{"date": y, "close": prev_close, "volume": 0.0},
+            {"date": today, "close": price, "volume": vol}]
