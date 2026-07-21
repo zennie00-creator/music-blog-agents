@@ -87,7 +87,7 @@ def run(ctx):
         r = analyze(rows, brows)
         if "insufficient" in r:
             lines.append(f"- {name} vs {bname}: 공통 거래일 {r['insufficient']}일 — "
-                         f"데이터 축적 부족, 판정 보류 (상장 초기 종목)")
+                         f"이력 누적 중, 판정 보류 (`--backfill`로 즉시 채움)")
             continue
         extra = " · RS 60일 신고가" if r["rs_high"] else (" · RS 60일 신저가" if r["rs_low"] else "")
         if r["acc_ratio"] is None:
