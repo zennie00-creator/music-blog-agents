@@ -259,9 +259,72 @@ def _write_by_date(by_date):
         f.write("\n".join(lines) + "\n")
 
 
+# 구글 티커 → 네이버 해외주식 로이터코드. 네이버는 Actions IP에서도 되는 게 강점.
+_NAVER_WORLD_MAP = {
+    "INDEXSP:.INX": ".INX", "INDEXNASDAQ:NDX": ".NDX", "INDEXDJX:.DJI": ".DJI",
+    "INDEXNASDAQ:SOX": ".SOX", "INDEXCBOE:VIX": ".VIX",
+}
+
+
+def _to_naver_world(ticker: str):
+    if ticker in _NAVER_WORLD_MAP:
+        return _NAVER_WORLD_MAP[ticker]
+    if ticker.startswith(("INDEX", "CURRENCY", "KRX")):
+        return None  # KRX는 국내 naver/ 경로·환율/기타 지수는 매핑 불확실 → 생략
+    if ":" in ticker:
+        exch, sym = ticker.split(":", 1)
+        if exch == "NASDAQ":
+            return sym + ".O"
+        if exch == "NYSE":
+            return sym + ".N"
+        return None
+    return ticker + ".O"  # 접두사 없는 것(PLTR 등)은 NASDAQ(.O) 가정
+
+
+def _fetch_naver_world(code: str, days: int):
+    """네이버 해외주식 일봉. Actions IP에서도 동작. 200인데 0행이면 원문을 예외로 노출."""
+    end = _date.today()
+    start = end - timedelta(days=int(days * 1.6) + 10)
+    url = (f"https://api.stock.naver.com/chart/foreign/item/{urllib.parse.quote(code)}/day"
+           f"?startDateTime={start:%Y%m%d}0000&endDateTime={end:%Y%m%d}2359")
+    r = requests.get(url, headers={**_UA, "Referer": "https://m.stock.naver.com/"}, timeout=15)
+    r.raise_for_status()
+    data = r.json()
+    items = data if isinstance(data, list) else (
+        data.get("priceInfos") or data.get("chart") or data.get("result") or [])
+    rows = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        d = it.get("localDate") or it.get("dt") or it.get("localDateTime") or it.get("date")
+        c = it.get("closePrice") or it.get("ncv") or it.get("close") or it.get("clpr")
+        v = it.get("accumulatedTradingVolume") or it.get("acml_vol") or it.get("volume") or 0
+        if not d or c in (None, ""):
+            continue
+        ds = str(d)
+        date_s = f"{ds[:4]}-{ds[4:6]}-{ds[6:8]}" if len(ds) >= 8 and ds[:8].isdigit() else ds[:10]
+        try:
+            rows.append({"date": date_s, "close": float(str(c).replace(",", "")),
+                         "volume": float(str(v).replace(",", "") or 0)})
+        except ValueError:
+            continue
+    if not rows:
+        raise ValueError(f"네이버 파싱 0행 (응답형태 확인): {str(data)[:150]}")
+    rows.sort(key=lambda x: x["date"])
+    return rows[-days:] if days else rows
+
+
 def _backfill_one(tk: str, days: int):
-    """한 티커의 과거 이력을 stooq(우선)→Yahoo 순으로 시도. (rows, 소스명) 반환."""
+    """한 티커 이력을 네이버(Actions OK)→stooq→Yahoo 순으로 시도. (rows, 소스명)."""
     from modes.investment import market_data
+    nc = _to_naver_world(tk)
+    if nc:
+        try:
+            rows = _fetch_naver_world(nc, days)
+            if len(rows) >= 5:
+                return rows, f"naver:{nc}"
+        except Exception as e:
+            print(f"    · naver {nc} 실패 → stooq/yahoo 시도: {e}")
     ssym = _to_stooq(tk)
     if ssym:
         try:
@@ -269,7 +332,7 @@ def _backfill_one(tk: str, days: int):
             if len(rows) >= 5:
                 return rows, f"stooq:{ssym}"
         except Exception as e:
-            print(f"    · stooq {ssym} 실패 → Yahoo 시도: {e}")
+            print(f"    · stooq {ssym} 실패: {e}")
     ysym = _to_yahoo(tk)
     if ysym:
         try:
