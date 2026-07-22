@@ -5,6 +5,8 @@ STEP w1 : 종목명·거리 편집 + 운동 전후 기분·몸 상태 입력
 STEP w2 : 분석 + 운동 일지 초안 → 수정 → 네이버 HTML 저장
 """
 import os
+from datetime import datetime, timezone, timedelta
+
 import streamlit as st
 
 import whoop_agent
