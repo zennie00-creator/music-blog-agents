@@ -336,6 +336,128 @@ def save_settings(data):
         return False
 
 
+# ── 시계열 코치 로그 (날짜별 코치 대화 축적) ─────────────────────────
+# 운동 일지를 완성할 때마다 그날의 (요약·코치 분석·내 답장)을 한 페이지의
+# 코드 블록에 JSON 배열로 append 한다. 다음 일지 분석 때 최근 며칠치를 불러와
+# "지난번에 이렇게 얘기했었죠" 식으로 이어지는 코칭을 만든다. (설정 저장과
+# 같은 방식 — 검색·파싱이 안정적이고 토큰이 거의 안 든다.)
+
+COACHLOG_TITLE = "운동 코치 로그"
+_coachlog_loc = None  # (page_id, code_block_id) 캐시
+
+
+def _coachlog_parent():
+    """코치 로그를 쌓을 부모 ID. 전용 환경변수 우선, 없으면 일반 발행 위치."""
+    return ((os.environ.get("NOTION_COACHLOG_PARENT_ID") or "").strip()
+            or _parent_id())
+
+
+def _find_coachlog():
+    """코치 로그 페이지의 (page_id, code_block_id). 없으면 (None, None)."""
+    global _coachlog_loc
+    if _coachlog_loc:
+        return _coachlog_loc
+    r = requests.post(f"{API}/search", headers=_headers(),
+                      json={"query": COACHLOG_TITLE,
+                            "filter": {"value": "page", "property": "object"},
+                            "page_size": 20}, timeout=20)
+    if r.status_code >= 300:
+        return (None, None)
+    for res in r.json().get("results", []):
+        title = ""
+        for p in (res.get("properties") or {}).values():
+            if p.get("type") == "title":
+                title = "".join(t.get("plain_text", "") for t in p.get("title", []))
+        if title.strip() != COACHLOG_TITLE:
+            continue
+        rb = requests.get(f"{API}/blocks/{res['id']}/children?page_size=50",
+                          headers=_headers(), timeout=20)
+        for b in rb.json().get("results", []):
+            if b.get("type") == "code":
+                _coachlog_loc = (res["id"], b["id"])
+                return _coachlog_loc
+    return (None, None)
+
+
+def load_coach_logs():
+    """저장된 코치 로그(최신순 dict 목록)를 반환. 없거나 실패하면 []."""
+    if not has_settings_credentials():
+        return []
+    try:
+        _page_id, code_id = _find_coachlog()
+        if not code_id:
+            return []
+        r = requests.get(f"{API}/blocks/{code_id}", headers=_headers(), timeout=20)
+        if r.status_code >= 300:
+            return []
+        texts = r.json().get("code", {}).get("rich_text", [])
+        raw = "".join(t.get("plain_text", "") for t in texts)
+        data = json.loads(raw) if raw.strip() else []
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _write_coachlog(logs):
+    """코치 로그 배열을 코드 블록에 저장(없으면 페이지 생성). 성공하면 True."""
+    payload = json.dumps(logs, ensure_ascii=False, indent=2)
+    _page_id, code_id = _find_coachlog()
+    if code_id:
+        r = requests.patch(f"{API}/blocks/{code_id}", headers=_headers(),
+                           json={"code": {"rich_text": _rich_long(payload)}},
+                           timeout=20)
+        return r.status_code < 300
+    pid = _coachlog_parent()
+    if not pid:
+        return False
+    kind, title_prop = _resolve_parent(pid)
+    children = [
+        _paragraph("운동 코치가 날짜별 대화(요약·분석·답장)를 이어가려고 "
+                   "보관하는 페이지입니다. 삭제하면 코칭 연속성이 초기화됩니다."),
+        {"object": "block", "type": "code",
+         "code": {"rich_text": _rich_long(payload), "language": "json"}},
+    ]
+    if kind == "database":
+        body = {"parent": {"database_id": pid},
+                "properties": {title_prop: {"title": _rich(COACHLOG_TITLE)}}}
+    else:
+        body = {"parent": {"page_id": pid},
+                "properties": {"title": {"title": _rich(COACHLOG_TITLE)}}}
+    body["children"] = children
+    body["icon"] = {"type": "emoji", "emoji": "🧑‍🏫"}
+    r = requests.post(f"{API}/pages", headers=_headers(), json=body, timeout=30)
+    if r.status_code >= 300:
+        return False
+    new_id = r.json().get("id")
+    rb = requests.get(f"{API}/blocks/{new_id}/children?page_size=20",
+                      headers=_headers(), timeout=20)
+    global _coachlog_loc
+    for b in rb.json().get("results", []):
+        if b.get("type") == "code":
+            _coachlog_loc = (new_id, b["id"])
+            break
+    return True
+
+
+def append_coach_log(entry, keep=14):
+    """코치 로그 한 항목을 append(최신이 앞). 같은 날짜는 덮어쓰고 keep개만 유지.
+
+    entry : {"date", "sports", "summary", "analysis", "reply"} dict.
+    """
+    if not has_settings_credentials():
+        return False
+    try:
+        logs = load_coach_logs()
+        date = entry.get("date")
+        # 같은 날짜의 기존 항목은 최신 내용으로 대체
+        logs = [e for e in logs if not (date and e.get("date") == date)]
+        logs.insert(0, entry)
+        logs = logs[:keep]
+        return _write_coachlog(logs)
+    except Exception:
+        return False
+
+
 def publish(title, summary_lines, body_text, coach_text="",
             image_ids=None, icon=None, parent_id=None, data_sections=None):
     """운동/음악 일지 형식으로 Notion 글을 생성하고 URL을 반환한다.

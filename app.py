@@ -12,7 +12,7 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-19 · v16 (Whoop v2 존 필드명 수정)"
+APP_VERSION = "2026-07-22 · v17 (최근 5일 선택 · 코치 기억 · 시계열 코치 로그)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
@@ -199,15 +199,20 @@ with st.sidebar:
         tone = st.text_input("일지 톤", value=p.get("tone", ""),
                     placeholder="예: 담백한 일기체, 자기격려, 데이터 위주")
         style_mem = st.text_area("🧠 기억된 문체 취향", value=p.get("style_memory", ""),
-                    height=140,
+                    height=120,
                     placeholder="일지를 완성할 때 수정 요청에서 자동으로 추려 쌓입니다. "
+                                "직접 고치거나 지워도 됩니다.")
+        coach_mem = st.text_area("🧠 코치가 기억하는 사실", value=p.get("coach_memory", ""),
+                    height=120,
+                    placeholder="코치에게 답장한 내용에서 '지속적 사실·습관·주의사항'을 "
+                                "자동으로 추려 쌓습니다. (예: 명상 매일, 오른쪽 무릎 주의) "
                                 "직접 고치거나 지워도 됩니다.")
         notes = st.text_input("기타", value=p.get("notes", ""),
                     placeholder="예: 오른쪽 무릎 주의")
         if st.button("💾 저장", use_container_width=True):
             _save_profile(profile_store.WORKOUT_PROFILE,
                 {"goals": goals, "sports": sports, "tone": tone,
-                 "style_memory": style_mem, "notes": notes})
+                 "style_memory": style_mem, "coach_memory": coach_mem, "notes": notes})
 
     elif st.session_state.mode == "devlog":
         st.markdown("### 📓 개발 일지")

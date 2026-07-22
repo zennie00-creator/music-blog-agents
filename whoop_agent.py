@@ -229,12 +229,17 @@ def _normalize_workout(w):
     dist = score.get("distance_meter")
     strain = score.get("strain")
     alt = score.get("altitude_gain_meter")
+    lt = _local_time(w.get("start"), tz)
+    dt_local = _to_local(w.get("start"), tz)
     return {
         "id": w.get("id"),
         "sport": _sport_name(w),
         "start": w.get("start"),
         "end": w.get("end"),
-        "local_time": _local_time(w.get("start"), tz),
+        "local_time": lt,
+        # 날짜별 그룹핑·과거 날짜 판별용 (로컬 기준)
+        "local_date": dt_local.strftime("%m/%d") if dt_local else lt[:5],
+        "local_iso_date": dt_local.strftime("%Y-%m-%d") if dt_local else None,
         "scored": w.get("score_state") == "SCORED",
         "duration_min": duration_min,
         "strain": round(strain, 1) if strain is not None else None,
@@ -250,8 +255,12 @@ def _normalize_workout(w):
     }
 
 
-def get_recent_workouts(days=2, limit=25):
-    """최근 days일 이내의 운동 목록 (최신순). 연결 안 됐으면 데모 데이터."""
+def get_recent_workouts(days=5, limit=25):
+    """최근 days일 이내의 운동 목록 (최신순). 연결 안 됐으면 데모 데이터.
+
+    일지를 못 쓴 날의 지난 운동으로도 일지를 쓸 수 있게 기본 5일을 조회한다.
+    화면(w0)에서 날짜별로 그룹핑해 '오늘/어제/N일 전'을 골라 쓸 수 있다.
+    """
     token = _valid_access_token()
     if not token:
         return _mock_workouts()
@@ -422,33 +431,56 @@ def _mock_trend():
             "- 3주 전: 회복 평균 66% · HRV 평균 69ms")
 
 
+def _mock_day(days_ago, hour):
+    """데모 데이터의 로컬 날짜/시각 문자열을 오늘 기준으로 만든다.
+
+    (start/end는 UTC ISO, local_*는 KST(+09:00) 로컬 기준.)
+    5일 그룹핑 UI를 데모에서도 볼 수 있게 날짜를 today 기준으로 흩뿌린다.
+    """
+    local = datetime.now(timezone(timedelta(hours=9))) - timedelta(days=days_ago)
+    local = local.replace(hour=hour, minute=30, second=0, microsecond=0)
+    utc = local.astimezone(timezone.utc)
+    return {
+        "start": utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "end": (utc + timedelta(minutes=40)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "local_time": local.strftime("%m/%d %H:%M"),
+        "local_date": local.strftime("%m/%d"),
+        "local_iso_date": local.strftime("%Y-%m-%d"),
+    }
+
+
 def _mock_workouts():
     return [
         {
-            "id": "mock-1", "sport": "러닝", "_mock": True,
-            "start": "2026-07-06T02:46:00Z", "end": "2026-07-06T03:28:00Z",
-            "local_time": "07/06 11:46", "scored": True,
+            "id": "mock-1", "sport": "러닝", "_mock": True, "scored": True,
             "duration_min": 42, "strain": 14.8, "avg_hr": 148, "max_hr": 188,
             "kcal": 565, "distance_m": 2390, "altitude_gain_m": 12,
             "percent_recorded": 100,
             "zones": {"zone1": 8.0, "zone2": 7.0, "zone3": 6.3,
                       "zone4": 11.8, "zone5": 9.0},
+            **_mock_day(0, 11),
         },
         {
-            "id": "mock-2", "sport": "웨이트 트레이닝", "_mock": True,
-            "start": "2026-07-06T10:30:00Z", "end": "2026-07-06T10:56:00Z",
-            "local_time": "07/06 19:30", "scored": True,
+            "id": "mock-2", "sport": "웨이트 트레이닝", "_mock": True, "scored": True,
             "duration_min": 26, "strain": 8.1, "avg_hr": 112, "max_hr": 141,
             "kcal": 190, "distance_m": None, "altitude_gain_m": None,
             "percent_recorded": 100,
             "zones": {"zone1": 14.0, "zone2": 8.0, "zone3": 4.0},
+            **_mock_day(0, 19),
         },
         {
-            "id": "mock-3", "sport": "운동", "_mock": True,
-            "start": "2026-07-06T00:10:00Z", "end": "2026-07-06T00:17:00Z",
-            "local_time": "07/06 09:10", "scored": False,
+            "id": "mock-4", "sport": "요가", "_mock": True, "scored": True,
+            "duration_min": 35, "strain": 6.2, "avg_hr": 98, "max_hr": 120,
+            "kcal": 150, "distance_m": None, "altitude_gain_m": None,
+            "percent_recorded": 100,
+            "zones": {"zone0": 10.0, "zone1": 18.0, "zone2": 7.0},
+            **_mock_day(2, 8),
+        },
+        {
+            "id": "mock-3", "sport": "운동", "_mock": True, "scored": False,
             "duration_min": 7, "strain": None, "avg_hr": None, "max_hr": None,
             "kcal": None, "distance_m": None, "altitude_gain_m": None,
             "percent_recorded": None, "zones": {},
+            **_mock_day(0, 9),
         },
     ]

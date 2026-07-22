@@ -19,7 +19,8 @@ from core import profile as profile_store
 DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list",
               "wk_summary", "wk_before", "wk_body", "wk_after", "wk_analysis",
               "wk_blog", "wk_blog_prev", "wk_trend", "wk_coach_notes",
-              "wk_whoop_note", "wk_saved_html", "wk_notion_url", "wk_style_fb")
+              "wk_whoop_note", "wk_saved_html", "wk_notion_url", "wk_style_fb",
+              "wk_is_today", "wk_coach_log")
 
 
 def _save_draft():
@@ -32,6 +33,51 @@ def _save_draft():
 
 def _profile():
     return profile_store.load(profile_store.WORKOUT_PROFILE, profile_store.WORKOUT_DEFAULT)
+
+
+def _today_iso():
+    """오늘 날짜(KST) 'YYYY-MM-DD'. 운동 날짜가 오늘인지 판별하는 기준."""
+    return datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+
+
+def _day_label(iso_date):
+    """운동 로컬 날짜(YYYY-MM-DD)를 '오늘·어제·N일 전 · MM/DD(요일)' 헤더로."""
+    try:
+        d = datetime.strptime(iso_date, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return iso_date or ""
+    today = datetime.now(timezone(timedelta(hours=9))).date()
+    diff = (today - d).days
+    if diff <= 0:
+        rel = "오늘"
+    elif diff == 1:
+        rel = "어제"
+    else:
+        rel = f"{diff}일 전"
+    wd = "월화수목금토일"[d.weekday()]
+    return f"{rel} · {d.month}/{d.day}({wd})"
+
+
+def _chosen_is_today():
+    """선택된 운동들이 모두 오늘(KST) 것인지. 하나라도 과거면 False."""
+    chosen = st.session_state.get("wk_selected_list") or []
+    today = _today_iso()
+    dates = [w.get("local_iso_date") for w in chosen if w.get("local_iso_date")]
+    return all(d == today for d in dates) if dates else True
+
+
+def _eff_recovery():
+    """과거 날짜 운동엔 '오늘 아침 회복도'가 안 맞으므로 그때만 제외한다."""
+    if st.session_state.get("wk_is_today", True):
+        return st.session_state.get("wk_recovery") or {}
+    return {}
+
+
+def _eff_cycle():
+    """누적 Strain은 '오늘 하루' 값 — 과거 날짜 운동엔 붙이지 않는다."""
+    if st.session_state.get("wk_is_today", True):
+        return st.session_state.get("wk_cycle")
+    return None
 
 
 def _zone_bar_html(w):
@@ -103,7 +149,7 @@ def run():
 
         st.write("")
         if not st.session_state.wk_workouts:
-            if st.button("📥 오늘 운동 불러오기", type="primary"):
+            if st.button("📥 최근 운동 불러오기", type="primary"):
                 with st.spinner("Whoop에서 데이터를 가져오는 중..."):
                     st.session_state.wk_workouts = whoop_agent.get_recent_workouts()
                     st.session_state.wk_recovery = whoop_agent.get_latest_recovery()
@@ -115,16 +161,27 @@ def run():
         scored = [(i, w) for i, w in enumerate(workouts) if w.get("scored")]
         unscored = [(i, w) for i, w in enumerate(workouts) if not w.get("scored")]
 
-        st.markdown("**오늘 블로그에 담을 운동을 모두 선택하세요.** (여러 개 선택 가능)")
+        st.markdown("**일지에 담을 운동을 선택하세요.** (여러 개 선택 가능 · "
+                    "최근 5일치를 보여드려요)")
+        st.caption("일지를 못 쓴 날의 지난 운동도 골라서 쓸 수 있어요. "
+                   "같은 날 운동만 한 편으로 묶는 걸 권장합니다.")
         st.write("")
 
+        # 날짜별(로컬)로 그룹핑해 '오늘/어제/N일 전' 헤더를 붙인다.
+        # scored는 이미 최신순 정렬 → dict가 그 순서(최신 날짜부터)를 유지한다.
+        groups = {}
         for i, w in scored:
-            c1, c2 = st.columns([1, 9])
-            with c1:
-                st.write("")
-                st.checkbox(" ", key=f"pick_wk_{i}", label_visibility="collapsed")
-            with c2:
-                _card(w)
+            groups.setdefault(w.get("local_iso_date") or "", []).append((i, w))
+        for iso_date, items in groups.items():
+            st.markdown(f'<div class="section-label">{_day_label(iso_date)}</div>',
+                        unsafe_allow_html=True)
+            for i, w in items:
+                c1, c2 = st.columns([1, 9])
+                with c1:
+                    st.write("")
+                    st.checkbox(" ", key=f"pick_wk_{i}", label_visibility="collapsed")
+                with c2:
+                    _card(w)
 
         if unscored:
             with st.expander(f"점수 없는 기록 {len(unscored)}개 더 보기 "
@@ -147,12 +204,19 @@ def run():
             if st.button("선택 완료 →", type="primary"):
                 chosen = [w for i, w in enumerate(workouts)
                           if st.session_state.get(f"pick_wk_{i}")]
+                dates = {w.get("local_iso_date") for w in chosen
+                         if w.get("local_iso_date")}
                 if not chosen:
                     st.warning("운동을 하나 이상 선택해주세요.")
+                elif len(dates) > 1:
+                    st.warning("서로 다른 날짜의 운동이 섞였어요. "
+                               "하루 치 운동만 골라 한 편으로 써주세요.")
                 else:
                     # 먼저 한 운동이 운동 1이 되도록 시간 오름차순 정렬
                     chosen.sort(key=lambda w: w.get("start") or "")
                     st.session_state.wk_selected_list = chosen
+                    # 오늘 것이 아니면 '오늘 회복도·누적 Strain'을 붙이지 않는다
+                    st.session_state.wk_is_today = _chosen_is_today()
                     st.session_state.step = "w1"
                     st.rerun()
 
@@ -245,8 +309,7 @@ def run():
                 st.session_state.wk_body = body
                 st.session_state.wk_after = after
                 st.session_state.wk_summary = workout_agent.format_summary(
-                    finalized, st.session_state.wk_recovery,
-                    st.session_state.get("wk_cycle"))
+                    finalized, _eff_recovery(), _eff_cycle())
                 # 최근 2주 추세는 숫자 요약이라 LLM 비용이 거의 들지 않는다
                 if not st.session_state.get("wk_trend"):
                     st.session_state.wk_trend = whoop_agent.get_trend_summary()
@@ -261,6 +324,12 @@ def run():
         st.markdown('<div class="step-pill">운동 · 3 / 3 — 분석 & 운동 일지</div>',
                     unsafe_allow_html=True)
         prof = _profile()
+
+        # 지난 며칠간의 코치 로그를 한 번만 불러와(네트워크 1회) 세션에 캐시.
+        # 코치가 "이어지는 대화"로 오늘을 해석하도록 압축 요약을 넘긴다.
+        if "wk_coach_log" not in st.session_state:
+            logs = notion_agent.load_coach_logs()
+            st.session_state.wk_coach_log = workout_agent.format_coach_log(logs)
 
         st.markdown('<div class="section-label">오늘의 운동 데이터</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="content-box">{st.session_state.wk_summary}</div>',
@@ -280,7 +349,8 @@ def run():
                     st.session_state.wk_summary, prof,
                     trend=st.session_state.get("wk_trend", ""),
                     user_note=st.session_state.get("wk_coach_notes") or "",
-                    whoop_note=st.session_state.get("wk_whoop_note") or "")
+                    whoop_note=st.session_state.get("wk_whoop_note") or "",
+                    coach_log=st.session_state.get("wk_coach_log", ""))
             st.rerun()
 
         if not st.session_state.wk_blog:
@@ -318,7 +388,8 @@ def run():
                         st.session_state.wk_summary, prof,
                         trend=st.session_state.get("wk_trend", ""),
                         user_note=st.session_state.get("wk_coach_notes", ""),
-                        whoop_note=st.session_state.wk_whoop_note)
+                        whoop_note=st.session_state.wk_whoop_note,
+                        coach_log=st.session_state.get("wk_coach_log", ""))
                 st.rerun()
             if ((st.session_state.get("wk_coach_notes") or st.session_state.get("wk_whoop_note"))
                     and st.session_state.wk_blog):
@@ -398,8 +469,8 @@ def _summary_lines(with_zones=True):
                  섹션으로 존을 넣으므로 False로 호출해 중복을 피한다.
     """
     chosen = st.session_state.wk_selected_list
-    rec = st.session_state.wk_recovery
-    cyc = st.session_state.get("wk_cycle") or {}
+    rec = _eff_recovery()
+    cyc = _eff_cycle() or {}
     lines = []
     if len(chosen) > 1:
         for w in chosen:
@@ -481,8 +552,12 @@ def _zone_sections_for_notion():
 def _title():
     chosen = st.session_state.wk_selected_list
     sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
-    date = chosen[0].get("local_time", "")[:5] if chosen else ""
-    return f"오늘의 운동 — {sports}" + (f" ({date})" if date else "")
+    date = (chosen[0].get("local_date")
+            or (chosen[0].get("local_time", "")[:5] if chosen else ""))
+    # 과거 날짜 운동으로 쓴 일지엔 '오늘의 운동'이 아니라 그 날짜를 붙인다.
+    if st.session_state.get("wk_is_today", True):
+        return f"오늘의 운동 — {sports}" + (f" ({date})" if date else "")
+    return (f"{date} 운동 — {sports}" if date else f"운동 — {sports}")
 
 
 def _plain_text():
@@ -498,14 +573,13 @@ def _plain_text():
 
 def _save_and_show():
     chosen = st.session_state.wk_selected_list
-    rec = st.session_state.wk_recovery
-    sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
+    rec = _eff_recovery()
     total_min = sum(w.get("duration_min") or 0 for w in chosen)
     naver_html = build_naver_html(
-        title=f"오늘의 운동 — {sports}",
+        title=_title(),
         subtitle=f"총 {total_min}분 · {len(chosen)}개 세션" if len(chosen) > 1
                  else f"{total_min}분",
-        stat_rows=workout_agent.stat_rows(chosen, rec, st.session_state.get("wk_cycle")),
+        stat_rows=workout_agent.stat_rows(chosen, rec, _eff_cycle()),
         extra_html=_naver_zone_html(),
         body_text=st.session_state.wk_blog,
         footer_box=("🧑‍🏫 코치의 한마디",
@@ -517,6 +591,8 @@ def _save_and_show():
     st.session_state.wk_saved_html = naver_html
     st.success("💾 저장 완료!")
     _learn_style()
+    _learn_coach_memory()
+    _save_coach_log()
 
 
 def _learn_style():
@@ -539,6 +615,57 @@ def _learn_style():
     profile_store.save(profile_store.WORKOUT_PROFILE, prof)
     st.caption("🧠 문체 취향을 기억해 뒀어요 — 다음 일지부터 자동 반영됩니다. "
                "(사이드바 프로필에서 확인·수정 가능)")
+
+
+def _learn_coach_memory():
+    """코치에게 답장한 내용에서 '지속적 사실·습관·주의사항'을 추려 프로필에 누적한다.
+
+    문체와 달리, 이건 코치 분석이 참고할 사실(명상 습관·무릎 주의 등)이라
+    coach_memory 필드에 쌓아 다음 세션(다음 날)에도 이어지게 한다.
+    """
+    notes = (st.session_state.get("wk_coach_notes") or "").strip()
+    if not notes:
+        return
+    prof = _profile()
+    old = (prof.get("coach_memory") or "").strip()
+    with st.spinner("코치에게 알려준 사실을 기억하는 중..."):
+        merged = workout_agent.update_coach_memory(old, notes).strip()
+    if not merged or merged == old:
+        return
+    prof["coach_memory"] = merged
+    profile_store.save(profile_store.WORKOUT_PROFILE, prof)
+    st.caption("🧠 코치에게 알려준 사실을 기억해 뒀어요 — 다음 일지 분석부터 반영됩니다.")
+
+
+def _save_coach_log():
+    """오늘 일지의 (요약·코치 분석·내 답장)을 Notion 코치 로그에 append.
+
+    다음 일지 분석 때 최근 며칠치를 불러와 '이어지는 대화'로 코칭이 발전한다.
+    Notion 미설정이면 조용히 넘어간다. 재실행으로 중복 저장되지 않게 1회만.
+    """
+    if st.session_state.get("wk_coachlog_saved"):
+        return
+    if not notion_agent.has_settings_credentials():
+        return
+    chosen = st.session_state.get("wk_selected_list") or []
+    date = (chosen[0].get("local_iso_date") if chosen else None) or _today_iso()
+    sports = " + ".join(dict.fromkeys(w.get("sport", "운동") for w in chosen))
+    entry = {
+        "date": date,
+        "sports": sports,
+        "summary": (st.session_state.get("wk_summary") or "").strip()[:600],
+        "analysis": (st.session_state.get("wk_analysis") or "").strip()[:1000],
+        "reply": (st.session_state.get("wk_coach_notes") or "").strip()[:500],
+    }
+    try:
+        ok = notion_agent.append_coach_log(entry)
+    except Exception:
+        ok = False
+    st.session_state.wk_coachlog_saved = True
+    if ok:
+        # 방금 저장한 오늘 항목이 다음 로드에 반영되도록 캐시를 갱신
+        st.session_state.pop("wk_coach_log", None)
+        st.caption("🗒 오늘 코치 대화를 로그에 남겼어요 — 다음 일지에서 이어집니다.")
 
 
 def _show_output():
@@ -604,7 +731,8 @@ def _reset():
     for k in ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list", "wk_summary",
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
-              "wk_coach_notes", "wk_whoop_note", "wk_style_fb"):
+              "wk_coach_notes", "wk_whoop_note", "wk_style_fb",
+              "wk_is_today", "wk_coach_log", "wk_coachlog_saved"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
