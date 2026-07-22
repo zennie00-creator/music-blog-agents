@@ -28,19 +28,32 @@ def sparkline(values, width: int = 20) -> str:
     return "".join(_BLOCKS[int((v - lo) / (hi - lo) * (len(_BLOCKS) - 1))] for v in vals)
 
 
-def _winsorize_volumes(recent):
-    """거래량 → 0~100 상대치. 소스(시트 당일 vs 네이버 백필) 스케일 차이로
-    한 점만 거대해지는 걸 막고(중앙값 3배로 winsorize), 축이 숨김이라 절대값은
-    의미 없으므로 0~100으로 압축해 URL 길이도 줄인다. (0은 그대로 0)."""
-    import statistics
-    vols = [float(r.get("volume") or 0) for r in recent]
-    nz = [v for v in vols if v > 0]
+def _align_volumes(recent):
+    """거래량 스케일 정렬 — '위를 자르지 않는다'(winsorize 아님).
+
+    히스토리(네이버 백필: 지수는 千 단위)와 오늘치(구글시트: 지수는 raw)가 섞여
+    한 점만 ~1000배로 튀는 게 문제였다. 중앙값과 100배 이상 벌어진 점만 1000의
+    거듭제곱으로 되돌려 같은 단위로 맞춘다 — 진짜 급등(2~10배)은 손대지 않는다.
+    거래량 0(오늘치 미제공 등)은 막대를 그리지 않고 갭(None)으로 둔다.
+    표시축이 숨김이라 절대값은 무의미 → 마지막에 0~100 비율로 압축(URL 단축,
+    비율 보존이라 봉우리를 안 자름)."""
+    raw = [float(r.get("volume") or 0) for r in recent]
+    nz = sorted(v for v in raw if v > 0)
     if not nz:
-        return [0] * len(vols), False
-    cap = statistics.median(nz) * 3  # 중앙값의 3배로 상한 (winsorize)
-    capped = [min(v, cap) for v in vols]
-    hi = max(capped) or 1
-    return [round(v / hi * 100) for v in capped], True  # 0~100 상대 높이
+        return [None] * len(raw), False
+    med = nz[len(nz) // 2]
+    aligned = []
+    for v in raw:
+        if v <= 0:
+            aligned.append(None)             # 결측 → 갭 (0 막대로 안 깨지게)
+            continue
+        while v / med >= 100:   # 소스 단위 불일치(지수 raw vs 千) → ÷1000
+            v /= 1000
+        while v / med <= 0.01:  # 반대 방향 불일치 → ×1000
+            v *= 1000
+        aligned.append(v)
+    hi = max(v for v in aligned if v) or 1
+    return [None if v is None else round(v / hi * 100) for v in aligned], True
 
 
 def quickchart_url(title: str, rows, days: int = 120, points: int = 28,
@@ -49,7 +62,7 @@ def quickchart_url(title: str, rows, days: int = 120, points: int = 28,
 
     자기완결 인라인 URL 우선(QuickChart 단축URL은 rate-limit/만료로 Notion에서
     깨질 수 있음). 한도(≤~1900자) 초과 시에만 단축URL 폴백.
-    거래량은 이상치 상한 처리해 스케일 깨짐을 방지한다.
+    거래량은 소스 단위 차이를 정렬(align)해 스케일 깨짐을 막되 봉우리는 보존한다.
     """
     recent = rows[-days:]
     if len(recent) > points:
@@ -58,7 +71,7 @@ def quickchart_url(title: str, rows, days: int = 120, points: int = 28,
 
     labels = [r["date"][5:] for r in recent]  # MM-DD
     closes = [round(r["close"], 2) for r in recent]
-    volumes, has_vol = _winsorize_volumes(recent)
+    volumes, has_vol = _align_volumes(recent)
 
     datasets = [{
         "type": "line", "label": "종가", "data": closes, "yAxisID": "p",
