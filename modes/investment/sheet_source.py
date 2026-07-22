@@ -185,6 +185,55 @@ def _save_today(snapshot: dict, today: str):
         f.write("\n".join(lines) + "\n")
 
 
+def reconcile_recent_volumes(lookback: int = 10):
+    """최근 며칠치 저장 거래량을 마감 후 네이버 실측으로 보정한다.
+
+    구글시트가 주는 '당일' 거래량은 장중엔 미확정이라 개별주는 0, 지수는 원주(raw)라
+    백필(네이버=千 단위)과 스케일이 어긋난다. 그래서 거래량의 신뢰 소스를 백필과
+    같은 네이버로 통일한다: 매일 실행 시 최근 lookback일 중 네이버에 마감 거래량이
+    있는 날짜만 그 값으로 덮어쓴다. 종가는 건드리지 않는다(거래량 cv[1]만).
+
+    · 당일(장중·미마감)은 네이버에도 아직 없어 0으로 남는다 → 차트에선 갭.
+    · 그 다음날 = 네이버에 마감 거래량이 들어오면 자동으로 채워진다.
+    """
+    from modes.investment import portfolio
+    sections, _ = portfolio.load()
+    tickers = [s.split("/", 1)[1] for _, items in sections for s, _ in items
+               if s.startswith("gsheet/")]
+    by_date = _read_by_date()
+    recent = sorted(by_date)[-lookback:]
+    if not recent:
+        return
+    recent_set = set(recent)
+    filled = 0
+    for tk in tickers:
+        codes = _naver_codes(tk)  # 거래량 없는 티커(환율·금리 등)는 [] → 건너뜀
+        if not codes:
+            continue
+        rows = []
+        for nc in codes:
+            try:
+                rows = _fetch_naver_world(nc, lookback + 5)
+                if rows:
+                    break
+            except Exception:
+                continue  # 조용히 스킵 — 브리프 본류를 막지 않는다
+        if not rows:
+            continue
+        vol_by_date = {r["date"]: (r.get("volume") or 0.0) for r in rows}
+        for d in recent_set:
+            cv = by_date[d].get(tk)
+            if not (isinstance(cv, list) and len(cv) > 1):
+                continue
+            v = vol_by_date.get(d)
+            if v and round(float(v), 2) != round(float(cv[1] or 0), 2):
+                cv[1] = float(v)  # 네이버 마감 실측으로 덮어씀 (종가 cv[0]은 유지)
+                filled += 1
+    if filled:
+        _write_by_date(by_date)
+        print(f"  🔁 거래량 보정: {filled}건 (최근 {lookback}일, 네이버 마감 실측)")
+
+
 def refresh(today: str = ""):
     """스냅숏 1회 수집 + 저장소 갱신 + 캐시 적재. collect_context 시작 시 호출."""
     global _SNAPSHOT, _HISTORY
@@ -193,6 +242,10 @@ def refresh(today: str = ""):
     if _SNAPSHOT:
         _save_today(_SNAPSHOT, today)
         print(f"  🧮 구글시트 시세 {len(_SNAPSHOT)}종목 수집 (이력 누적)")
+    try:
+        reconcile_recent_volumes()  # 전날치 거래량을 네이버 마감값으로 보정
+    except Exception as e:
+        print(f"  ⚠️ 거래량 보정 스킵: {e}")
     _HISTORY = _load_store()
     return _SNAPSHOT
 
