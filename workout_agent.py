@@ -221,7 +221,8 @@ def stat_rows(workouts, recovery=None, cycle=None):
     return rows
 
 
-def analyze_workout(summary, profile=None, trend="", user_note="", whoop_note=""):
+def analyze_workout(summary, profile=None, trend="", user_note="", whoop_note="",
+                    coach_log=""):
     """코치 관점에서 오늘 운동(들)을 해석한다 (초안).
 
     trend      : 최근 2주 운동·회복 숫자 요약 (whoop_agent.get_trend_summary).
@@ -229,12 +230,19 @@ def analyze_workout(summary, profile=None, trend="", user_note="", whoop_note=""
                  (예: 명상 습관, 회복도 급락 원인). 데이터보다 우선한다.
     whoop_note : Whoop 앱 코치가 한 말 (사용자가 붙여넣음). 동료 코치의
                  의견으로 참고 — 반복하지 말고 보완한다.
+    coach_log  : 지난 며칠간의 코치 로그 압축 요약 (format_coach_log). 이전
+                 대화를 이어가듯 "지난번에 이렇게 얘기했었죠" 식으로 참고한다.
     """
     goal = (profile or {}).get("goals", "")
     goal_line = f"이 사람의 운동 목표: {goal}" if goal else ""
     notes = (profile or {}).get("notes", "")
     if notes:
         goal_line += f"\n이 사람에 대한 참고사항: {notes}"
+    # 코치 답장에서 축적된 '지속적으로 알려진 사실'(명상 습관·무릎 주의 등)
+    memory = ((profile or {}).get("coach_memory") or "").strip()
+    if memory:
+        goal_line += ("\n이 사람에 대해 지금까지 알게 된 지속적 사실 "
+                      "(이미 반영해서 조언할 것):\n" + memory)
     trend_block = ""
     if trend:
         trend_block = f"""
@@ -266,11 +274,22 @@ def analyze_workout(summary, profile=None, trend="", user_note="", whoop_note=""
 같은 말을 반복하지 말고, 동의하면 짧게 언급만 하고 보완하거나
 다른 관점(심박존·추세·오늘의 선택)을 더해주세요.
 """
+    log_block = ""
+    if coach_log and coach_log.strip():
+        log_block = f"""
+[지난 며칠간 우리가 나눈 코치 로그 — 이 대화의 연속선]
+{coach_log.strip()}
+
+위는 지난 일지들에서 당신이 이미 해준 조언과 그 사람의 답장입니다.
+매번 처음 만난 것처럼 굴지 말고, 이 흐름을 이어서 말하세요.
+지난번에 권한 것을 지켰는지/어떻게 됐는지 자연스럽게 짚어주되,
+같은 조언을 토씨까지 반복하지는 마세요.
+"""
     prompt = f"""당신은 이 사람을 꾸준히 지켜봐 온 퍼스널 트레이너이자 운동 코치입니다.
 아래는 오늘 한 사람의 Whoop 운동 기록입니다. (여러 운동일 수 있습니다)
 
 {summary}
-{trend_block}{note_block}{whoop_block}
+{trend_block}{log_block}{note_block}{whoop_block}
 {goal_line}
 
 이 데이터를 2~3문단으로 해석해주세요:
@@ -399,6 +418,59 @@ def update_style_memory(existing, feedbacks):
 - 기억도 없고 새로 뽑을 것도 없으면 아무것도 출력하지 마세요
 - 목록 외의 설명·인사는 출력 금지"""
     return writer.generate(prompt, model=writer.QUICK_MODEL, max_tokens=500).strip()
+
+
+def update_coach_memory(existing, notes):
+    """코치에게 답장한 내용에서 '다음에도 계속 참일 사실'만 추려 기존 기억과 합친다.
+
+    문체 취향(update_style_memory)과 달리, 이건 코치가 조언할 때 알아야 할
+    '지속적 사실·습관·주의사항'(예: 명상 매일 15~20분, 오른쪽 무릎 주의,
+    VO2Max 42)을 축적한다. 새 세션(다음 날)에도 프로필로 남아 분석에 반영된다.
+    결과는 짧은 목록(최대 8줄, 400자 이내)으로 유지해 토큰 부담을 없앤다."""
+    if not (notes or "").strip():
+        return (existing or "").strip()
+    prompt = f"""아래는 운동하는 사람이 자기 코치에게 직접 전한 말들입니다:
+{notes.strip()}
+
+[지금까지 코치가 기억해 둔 이 사람에 대한 지속적 사실]
+{(existing or '').strip() or '(아직 없음)'}
+
+위 말들 중 '오늘 하루에만 해당하는 것'(예: 오늘 회식으로 회복도 급락)은 버리고,
+'앞으로도 계속 참일 사실·습관·몸 상태·주의사항'(예: 명상을 매일 한다,
+오른쪽 무릎이 약하다, VO2Max 42)만 뽑아 기존 기억과 합친 최종 목록을 만드세요.
+
+규칙:
+- 겹치거나 모순되면 최신 정보를 우선해 하나로 정리
+- 최대 8줄, 한 줄에 하나씩 "- "로 시작하는 간결한 사실, 전체 400자 이내
+- 새로 뽑을 게 없으면 기존 기억을 그대로 출력
+- 기억도 없고 새로 뽑을 것도 없으면 아무것도 출력하지 마세요
+- 목록 외의 설명·인사는 출력 금지"""
+    return writer.generate(prompt, model=writer.QUICK_MODEL, max_tokens=500).strip()
+
+
+def format_coach_log(logs, limit=5):
+    """코치 로그(최신순 dict 목록)를 프롬프트용 압축 텍스트로. (LLM 비용 없음)
+
+    각 항목: {date, sports, analysis, reply}. 토큰을 아끼려고 분석은 앞부분만,
+    답장은 짧게 잘라 '날짜 · 종목 · 그때 조언 요지 · 내 답장'으로만 남긴다.
+    최신 limit개만, 오래된 것이 위로 오도록(대화 흐름 순) 정렬해 돌려준다.
+    """
+    if not logs:
+        return ""
+    recent = logs[:limit]
+    lines = []
+    for e in reversed(recent):  # 오래된 것 → 최신 순 (대화처럼 읽히게)
+        date = e.get("date", "")
+        sports = e.get("sports", "")
+        head = f"[{date} · {sports}]" if sports else f"[{date}]"
+        lines.append(head)
+        analysis = (e.get("analysis") or "").strip().replace("\n", " ")
+        if analysis:
+            lines.append(f"  코치: {analysis[:220]}")
+        reply = (e.get("reply") or "").strip().replace("\n", " ")
+        if reply:
+            lines.append(f"  본인 답장: {reply[:160]}")
+    return "\n".join(lines)
 
 
 def naturalize(text):

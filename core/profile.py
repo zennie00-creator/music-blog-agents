@@ -20,7 +20,7 @@ AUDIO_DEFAULT = {"devices": "", "room": "", "preferences": "", "notes": ""}
 
 WORKOUT_PROFILE = "workout_profile.json"
 WORKOUT_DEFAULT = {"goals": "", "sports": "", "tone": "",
-                   "style_memory": "", "notes": ""}
+                   "style_memory": "", "coach_memory": "", "notes": ""}
 
 # Notion 백업 전체(dict)의 프로세스 내 캐시 — 재부팅 후 첫 로드에만 원격 호출
 _remote_cache = None
