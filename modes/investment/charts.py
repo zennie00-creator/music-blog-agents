@@ -83,7 +83,9 @@ def _short_chart_url(config, width, height):
 
 
 CHART_SECTION_KEYWORDS = ("지수", "섹터", "주도주")
-MAX_CHARTS = 6
+# PNG 파일 업로드로 바꾼 뒤로는 Notion 렌더가 안정적이라 상한을 넉넉히 둔다.
+# 지수·섹터 + 주도주(보유·관심 종목)를 모두 담아 SK하이닉스 본주 등이 안 잘리게.
+MAX_CHARTS = 12
 MIN_CHART_HISTORY = 20  # 이력이 짧으면(신규상장·백필 전) 차트 생략 — 2점짜리 방지
 
 
