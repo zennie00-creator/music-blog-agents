@@ -28,41 +28,13 @@ def sparkline(values, width: int = 20) -> str:
     return "".join(_BLOCKS[int((v - lo) / (hi - lo) * (len(_BLOCKS) - 1))] for v in vals)
 
 
-def _align_volumes(recent):
-    """거래량 스케일 정렬 — '위를 자르지 않는다'(winsorize 아님).
-
-    히스토리(네이버 백필: 지수는 千 단위)와 오늘치(구글시트: 지수는 raw)가 섞여
-    한 점만 ~1000배로 튀는 게 문제였다. 중앙값과 100배 이상 벌어진 점만 1000의
-    거듭제곱으로 되돌려 같은 단위로 맞춘다 — 진짜 급등(2~10배)은 손대지 않는다.
-    거래량 0(오늘치 미제공 등)은 막대를 그리지 않고 갭(None)으로 둔다.
-    표시축이 숨김이라 절대값은 무의미 → 마지막에 0~100 비율로 압축(URL 단축,
-    비율 보존이라 봉우리를 안 자름)."""
-    raw = [float(r.get("volume") or 0) for r in recent]
-    nz = sorted(v for v in raw if v > 0)
-    if not nz:
-        return [None] * len(raw), False
-    med = nz[len(nz) // 2]
-    aligned = []
-    for v in raw:
-        if v <= 0:
-            aligned.append(None)             # 결측 → 갭 (0 막대로 안 깨지게)
-            continue
-        while v / med >= 100:   # 소스 단위 불일치(지수 raw vs 千) → ÷1000
-            v /= 1000
-        while v / med <= 0.01:  # 반대 방향 불일치 → ×1000
-            v *= 1000
-        aligned.append(v)
-    hi = max(v for v in aligned if v) or 1
-    return [None if v is None else round(v / hi * 100) for v in aligned], True
-
-
-def quickchart_url(title: str, rows, days: int = 120, points: int = 28,
+def quickchart_url(title: str, rows, days: int = 120, points: int = 40,
                    width: int = 680, height: int = 340) -> str:
-    """일별 시세 rows → 종가 라인 + 거래량 바 차트 이미지 URL.
+    """일별 시세 rows → 종가 추세선 차트 이미지 URL.
 
-    자기완결 인라인 URL 우선(QuickChart 단축URL은 rate-limit/만료로 Notion에서
-    깨질 수 있음). 한도(≤~1900자) 초과 시에만 단축URL 폴백.
-    거래량은 소스 단위 차이를 정렬(align)해 스케일 깨짐을 막되 봉우리는 보존한다.
+    가능한 한 '자기완결(self-contained) 인라인 URL'을 쓴다 — QuickChart 단축URL은
+    무료 생성 API의 rate-limit·만료로 Notion에서 이미지가 깨질 수 있어서다.
+    인라인이 Notion 한도(≤~1900자)를 넘을 때만 단축URL로 폴백한다.
     """
     recent = rows[-days:]
     if len(recent) > points:
@@ -71,35 +43,26 @@ def quickchart_url(title: str, rows, days: int = 120, points: int = 28,
 
     labels = [r["date"][5:] for r in recent]  # MM-DD
     closes = [round(r["close"], 2) for r in recent]
-    volumes, has_vol = _align_volumes(recent)
 
-    datasets = [{
-        "type": "line", "label": "종가", "data": closes, "yAxisID": "p",
-        "borderColor": "#2563eb", "borderWidth": 2, "fill": False,
-        "pointRadius": 0, "tension": 0.15,
-    }]
-    y_axes = [{"id": "p", "position": "left"}]
-    if has_vol:
-        datasets.append({
-            "type": "bar", "label": "거래량", "data": volumes, "yAxisID": "v",
-            "backgroundColor": "rgba(148,163,184,0.45)",
-        })
-        y_axes.append({"id": "v", "position": "right", "display": False,
-                       "ticks": {"beginAtZero": True}})
-
+    # 종가 추세선만 그린다. 거래량 막대는 소스(네이버 백필 vs 시트 당일)마다
+    # 스케일이 달라 한 막대만 거대해져 깨지므로 제외 — 거래량은 대시보드에 있다.
     config = {
-        "type": "bar",
-        "data": {"labels": labels, "datasets": datasets},
+        "type": "line",
+        "data": {"labels": labels, "datasets": [{
+            "label": "종가", "data": closes,
+            "borderColor": "#2563eb", "borderWidth": 2, "fill": False,
+            "pointRadius": 0, "tension": 0.15,
+        }]},
         "options": {
             "title": {"display": True, "text": title},
             "legend": {"display": False},
-            "scales": {"yAxes": y_axes, "xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
+            "scales": {"xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
         },
     }
     c = urllib.parse.quote(json.dumps(config, separators=(",", ":"), ensure_ascii=False))
     inline = f"https://quickchart.io/chart?w={width}&h={height}&bkg=white&c={c}"
     if len(inline) <= 1900:
-        return inline
+        return inline  # 안정적인 자기완결 URL
     return _short_chart_url(config, width, height) or inline
 
 
