@@ -19,7 +19,9 @@ CONFIG = {
     "main": "naver/000660",
     "adr": "gsheet/NASDAQ:SKHY",
     "fx": "gsheet/CURRENCY:USDKRW",
-    "ratio": None,   # None=실데이터에서 자동 추정. 숫자로 고정하려면 예: 0.125
+    "ratio": 0.1,    # 공식 비율: 1 ADR = 0.1 원주 (10 ADR = 본주 1주).
+                     # 이 원칙 대비 실제 괴리(프리미엄)를 있는 그대로 보여준다.
+                     # (None으로 두면 실데이터 median으로 자동추정 — 구조적 프리미엄을 흡수함)
 }
 
 
@@ -36,16 +38,17 @@ def _implied_series(main, adr, fx):
     return out
 
 
-def _verdict(prem):
-    if prem >= 3:
-        return "🔴 ADR 프리미엄 과열 — 해외 수요 강함 (본주 상대 저평가, 차익 주시)"
-    if prem >= 1:
-        return "🟡 ADR 소폭 프리미엄"
-    if prem > -1:
-        return "🟢 괴리 미미 — 본주·ADR 균형"
-    if prem > -3:
-        return "🟡 ADR 소폭 디스카운트"
-    return "🔵 ADR 디스카운트 — 본주 대비 저평가 (해외 수요 약함)"
+def _verdict(dev):
+    """오늘 프리미엄이 자기 평소(60일 평균) 대비 얼마나 벌어졌나(%p)로 판정."""
+    if dev >= 2:
+        return "🔴 프리미엄 확대 — 평소보다 과열 (해외 수요↑·본주 상대 저평가 심화)"
+    if dev >= 0.7:
+        return "🟡 프리미엄 소폭 확대"
+    if dev > -0.7:
+        return "🟢 평소 수준 유지"
+    if dev > -2:
+        return "🟡 프리미엄 소폭 축소"
+    return "🔵 프리미엄 축소 — 해외 수요 둔화 or 본주 강세 (괴리 수렴)"
 
 
 def run(ctx):
@@ -70,18 +73,22 @@ def run(ctx):
         lines.append("- (비율 추정 불가)")
         return "\n".join(lines)
 
-    prem_series = [(d, (v / k - 1) * 100) for d, v in series]
+    prem_series = [(d, (v / k - 1) * 100) for d, v in series]  # 공식 비율 대비 프리미엄%
     prem = prem_series[-1][1]
     mp, ap, rate = main[-1]["close"], adr[-1]["close"], fx[-1]["close"]
 
-    src = "고정" if CONFIG["ratio"] else f"실데이터 {len(vals)}일 자동추정"
-    lines.append(f"- 구조적 비율: **1 ADR ≈ {k:.3f}주** (본주 1주 ≈ {1/k:.1f} ADR) · {src}")
-    lines.append(f"- 오늘: 본주 {mp:,.0f}원 / ADR ${ap:,.2f} × {rate:,.0f} = {ap*rate:,.0f}원 환산")
-    trend = ""
+    ratio_txt = "공식 1:10" if CONFIG["ratio"] == 0.1 else f"{k:.3f}주/ADR"
+    lines.append(f"- 오늘: 본주 {mp:,.0f}원 / ADR ${ap:,.2f} × {rate:,.0f} = {ap*rate:,.0f}원 환산 "
+                 f"(비율 {ratio_txt})")
+
     prems = [p for _, p in prem_series[-60:]]
     if len(prems) >= 5:
-        arrow = ("확대" if sum(prems[-5:]) / 5 > sum(prems[:5]) / 5 + 0.3
-                 else "축소" if sum(prems[-5:]) / 5 < sum(prems[:5]) / 5 - 0.3 else "횡보")
-        trend = f" · 60일 {sparkline(prems)} ({arrow})"
-    lines.append(f"- 괴리(ADR 프리미엄): {prem:+.2f}% → {_verdict(prem)}{trend}")
+        avg = sum(prems) / len(prems)
+        dev = prem - avg
+        arrow = "확대" if dev > 0.3 else ("축소" if dev < -0.3 else "횡보")
+        lines.append(f"- ADR 프리미엄: **{prem:+.1f}%** (60일 평균 {avg:+.1f}%, "
+                     f"{dev:+.1f}%p {arrow}) {sparkline(prems)}")
+        lines.append(f"  → {_verdict(dev)}")
+    else:
+        lines.append(f"- ADR 프리미엄: **{prem:+.1f}%** (평균 비교는 이력 누적 후 · 백필 권장)")
     return "\n".join(lines)
