@@ -10,7 +10,7 @@
 주도주는 이름 뒤 `@벤치마크`로 RS 신호 대상 지정. 줄 추가/삭제로 가감.
 ※ gsheet 심볼은 게시 CSV에 그 티커 줄이 있어야 함(GOOGLEFINANCE). 이력은 매일 누적.
 
-## 채권 (금리) — 구글시트 CBOE 금리지수
+## 채권 금리 (CBOE·÷10)
 gsheet/INDEXCBOE:IRX: 미 3개월(13주)
 gsheet/INDEXCBOE:FVX: 미 5년물
 gsheet/INDEXCBOE:TNX: 미 10년물

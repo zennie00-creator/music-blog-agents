@@ -11,7 +11,7 @@
 주도주 교체 = 여기서 줄 하나 수정. `@벤치마크`가 붙은 종목은 상대강도(RS) 신호 대상.
 ※ gsheet 심볼은 게시 CSV(MARKET_CSV_URLS)에 그 티커 줄이 있어야 함(GOOGLEFINANCE).
 
-## 채권 (금리) — 구글시트 CBOE 금리지수 (시트에 INDEXCBOE:* 줄 추가 필요)
+## 채권 금리 (CBOE·÷10) (시트에 INDEXCBOE:* 줄 추가 필요)
 gsheet/INDEXCBOE:IRX: 미 3개월(13주)
 gsheet/INDEXCBOE:FVX: 미 5년물
 gsheet/INDEXCBOE:TNX: 미 10년물

@@ -19,7 +19,7 @@ import os
 from core import config
 
 DEFAULT = """\
-## 채권 (금리) — 구글시트 CBOE 금리지수
+## 채권 금리 (CBOE·÷10)
 gsheet/INDEXCBOE:IRX: 미 3개월(13주)
 gsheet/INDEXCBOE:FVX: 미 5년물
 gsheet/INDEXCBOE:TNX: 미 10년물
