@@ -98,10 +98,11 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
         analysis = "## 시장 브리핑\n(Grok 분석 생성에 실패해 데이터·신호만 수록)"
 
     brief = f"# 📊 모닝 브리핑 — {today}\n\n{data_md}\n\n{analysis}"
+    chart_specs = []
     try:
-        charts_md = charts.charts_markdown(ctx)
-        if charts_md:
-            brief += "\n\n## 차트\n" + charts_md
+        chart_specs = charts.chart_specs(ctx)  # [(종목명, PNG바이트)] — Notion에 파일 업로드
+        if chart_specs:
+            brief += "\n\n## 차트"  # 헤딩만; 이미지는 파일 블록으로 본문 뒤에 붙음
     except Exception as e:
         print(f"  ⚠️ 차트 생성 실패 (건너뜀): {e}")
 
@@ -117,7 +118,7 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
     if publish:
         print("\n📤 [3/3] Notion 발행 중...")
         try:
-            url = publish_page(f"📊 모닝 브리핑 — {today}", brief)
+            url = publish_page(f"📊 모닝 브리핑 — {today}", brief, image_specs=chart_specs)
             result["notion_url"] = url
             print(f"✅ 발행 완료: {url}")
         except Exception as e:
@@ -170,11 +171,12 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
                    f"(Claude 일지 생성에 실패해 데이터·신호·Grok 분석만 수록)\n\n"
                    f"{data_md}\n\n{analysis}{memo_md}")
 
-    # 차트는 일지 생성 후에 붙인다 (LLM 토큰 소모 없음, Notion에서 이미지로 렌더)
+    # 차트는 일지 생성 후에 붙인다 (LLM 토큰 소모 없음, Notion에 PNG 파일로 업로드)
+    chart_specs = []
     try:
-        charts_md = charts.charts_markdown(ctx)
-        if charts_md:
-            journal += "\n\n## 차트\n" + charts_md
+        chart_specs = charts.chart_specs(ctx)
+        if chart_specs:
+            journal += "\n\n## 차트"  # 헤딩만; 이미지는 파일 블록으로 본문 뒤에 붙음
     except Exception as e:
         print(f"  ⚠️ 차트 생성 실패 (건너뜀): {e}")
 
@@ -187,7 +189,7 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     if publish:
         print("\n📤 [4/4] Notion 발행 중...")
         try:
-            url = publish_page(f"📈 투자 일지 — {today}", journal)
+            url = publish_page(f"📈 투자 일지 — {today}", journal, image_specs=chart_specs)
             result["notion_url"] = url
             print(f"✅ 발행 완료: {url}")
         except Exception as e:
