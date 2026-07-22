@@ -82,13 +82,15 @@ def run(ctx):
                  f"(비율 {ratio_txt})")
 
     prems = [p for _, p in prem_series[-60:]]
-    if len(prems) >= 5:
-        avg = sum(prems) / len(prems)
+    n = len(prems)
+    if n >= 3:
+        avg = sum(prems) / n
         dev = prem - avg
         arrow = "확대" if dev > 0.3 else ("축소" if dev < -0.3 else "횡보")
-        lines.append(f"- ADR 프리미엄: **{prem:+.1f}%** (60일 평균 {avg:+.1f}%, "
-                     f"{dev:+.1f}%p {arrow}) {sparkline(prems)}")
+        note = " ⚠️신규상장 초기" if n < 15 else ""  # SKHY는 상장 2주차 → 표본 적음
+        lines.append(f"- ADR 프리미엄: **{prem:+.1f}%** (최근 {n}일 평균 {avg:+.1f}%, "
+                     f"{dev:+.1f}%p {arrow}){note} {sparkline(prems)}")
         lines.append(f"  → {_verdict(dev)}")
     else:
-        lines.append(f"- ADR 프리미엄: **{prem:+.1f}%** (평균 비교는 이력 누적 후 · 백필 권장)")
+        lines.append(f"- ADR 프리미엄: **{prem:+.1f}%** (평균 비교는 며칠 더 쌓이면 · 상장 초기)")
     return "\n".join(lines)
