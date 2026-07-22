@@ -59,7 +59,9 @@ USER_TEMPLATE = """이번 주 회고를 작성해 주세요. 오늘: {today}
 
 
 def _strip_charts(text: str) -> str:
-    return re.split(r"\n## 차트\n", text)[0]
+    # "## 차트"는 헤딩만 남고 이미지는 Notion 파일 블록으로 붙으므로(본문엔 없음)
+    # 헤딩 이후 어떤 형태든(줄바꿈+구 QuickChart 링크 포함) 잘라낸다.
+    return re.split(r"\n## 차트\b", text)[0]
 
 
 def collect_week_docs(today: date):
