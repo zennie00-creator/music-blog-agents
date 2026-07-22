@@ -34,8 +34,8 @@ gsheet/INDEXNASDAQ:SOX: 필라델피아 반도체
 gsheet/NASDAQ:NVDA: 엔비디아 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:MU: 마이크론 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:SKHY: SK하이닉스 ADR @gsheet/INDEXNASDAQ:SOX
+naver/000660: SK하이닉스 (본주) @gsheet/KRX:KOSPI
 gsheet/NYSE:COHR: 코히런트 @gsheet/INDEXNASDAQ:SOX
-naver/000660: SK하이닉스 @gsheet/KRX:KOSPI
 
 ## 환율
 gsheet/CURRENCY:USDKRW: 원/달러
