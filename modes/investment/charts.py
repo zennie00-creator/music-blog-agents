@@ -28,7 +28,7 @@ def sparkline(values, width: int = 20) -> str:
     return "".join(_BLOCKS[int((v - lo) / (hi - lo) * (len(_BLOCKS) - 1))] for v in vals)
 
 
-def quickchart_url(title: str, rows, days: int = 120, points: int = 22,
+def quickchart_url(title: str, rows, days: int = 120, points: int = 40,
                    width: int = 680, height: int = 340) -> str:
     """일별 시세 rows → 종가 라인 + 거래량 바 차트 이미지 URL.
 
@@ -43,30 +43,20 @@ def quickchart_url(title: str, rows, days: int = 120, points: int = 22,
 
     labels = [r["date"][5:] for r in recent]  # MM-DD
     closes = [round(r["close"], 2) for r in recent]
-    volumes = [round(r.get("volume") or 0) for r in recent]
-    has_vol = any(volumes)
 
-    datasets = [{
-        "type": "line", "label": "종가", "data": closes, "yAxisID": "p",
-        "borderColor": "#2563eb", "borderWidth": 2, "fill": False, "pointRadius": 0,
-    }]
-    y_axes = [{"id": "p", "position": "left"}]
-    if has_vol:
-        datasets.append({
-            "type": "bar", "label": "거래량", "data": volumes, "yAxisID": "v",
-            "backgroundColor": "rgba(148,163,184,0.4)",
-        })
-        y_axes.append({"id": "v", "position": "right",
-                       "gridLines": {"display": False}, "ticks": {"beginAtZero": True}})
-
+    # 종가 추세선만 그린다. 거래량 막대는 소스(네이버 백필 vs 시트 당일)마다
+    # 스케일이 달라 한 막대만 거대해져 깨지므로 제외 — 거래량은 대시보드에 있다.
     config = {
-        "type": "bar",
-        "data": {"labels": labels, "datasets": datasets},
+        "type": "line",
+        "data": {"labels": labels, "datasets": [{
+            "label": "종가", "data": closes,
+            "borderColor": "#2563eb", "borderWidth": 2, "fill": False,
+            "pointRadius": 0, "tension": 0.15,
+        }]},
         "options": {
             "title": {"display": True, "text": title},
-            "legend": {"display": has_vol},
-            "scales": {"yAxes": y_axes,
-                       "xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
+            "legend": {"display": False},
+            "scales": {"xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
         },
     }
     c = urllib.parse.quote(json.dumps(config, separators=(",", ":"), ensure_ascii=False))
