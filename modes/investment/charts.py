@@ -83,11 +83,12 @@ def _short_chart_url(config, width, height):
 
 
 CHART_SECTION_KEYWORDS = ("지수", "섹터", "주도주")
-MAX_CHARTS = 8
+MAX_CHARTS = 6
+MIN_CHART_HISTORY = 20  # 이력이 짧으면(신규상장·백필 전) 차트 생략 — 2점짜리 방지
 
 
 def charts_markdown(ctx, keywords=CHART_SECTION_KEYWORDS, limit: int = MAX_CHARTS) -> str:
-    """지수·섹터·주도주 자산의 차트 이미지 마크다운(`![...](url)`) 생성."""
+    """지수·섹터·주도주 중 이력이 충분한 자산만 차트로. (Notion 렌더 안정 위해 소수만)"""
     lines = []
     for title, syms in ctx.get("sections", []):
         if not any(k in title for k in keywords):
@@ -95,7 +96,9 @@ def charts_markdown(ctx, keywords=CHART_SECTION_KEYWORDS, limit: int = MAX_CHART
         for sym in syms:
             if len(lines) >= limit:
                 break
+            rows = ctx["histories"][sym]
+            if len(rows) < MIN_CHART_HISTORY:
+                continue  # 짧은 이력은 추세가 안 보여 스킵
             name = ctx["names"].get(sym, sym)
-            url = quickchart_url(name, ctx["histories"][sym])
-            lines.append(f"![{name}]({url})")
+            lines.append(f"![{name}]({quickchart_url(name, rows)})")
     return "\n".join(lines)

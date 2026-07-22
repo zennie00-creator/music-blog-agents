@@ -290,8 +290,12 @@ _NAVER_WORLD_MAP = {
 def _to_naver_world(ticker: str):
     if ticker in _NAVER_WORLD_MAP:
         return _NAVER_WORLD_MAP[ticker]
+    if ticker == "KRX:KOSPI":
+        return "KOSPI"   # 네이버 국내지수 (domestic/index 경로에서 처리)
+    if ticker == "KRX:KOSDAQ":
+        return "KOSDAQ"
     if ticker.startswith(("INDEX", "CURRENCY", "KRX")):
-        return None  # KRX는 국내 naver/ 경로·환율/기타 지수는 매핑 불확실 → 생략
+        return None  # 환율/기타 지수는 매핑 불확실 → 생략
     if ":" in ticker:
         exch, sym = ticker.split(":", 1)
         if exch == "NASDAQ":
@@ -332,8 +336,10 @@ def _fetch_naver_world(code: str, days: int):
     start = end - timedelta(days=int(days * 1.6) + 10)
     qs = f"?startDateTime={start:%Y%m%d}0000&endDateTime={end:%Y%m%d}2359"
     last = "?"
-    for kind in ("item", "index"):
-        url = f"https://api.stock.naver.com/chart/foreign/{kind}/{urllib.parse.quote(code)}/day{qs}"
+    # 종목=foreign/item, 해외지수=foreign/index, 국내지수(KOSPI 등)=domestic/index
+    paths = [("foreign", "item"), ("foreign", "index"), ("domestic", "index")]
+    for market, kind in paths:
+        url = f"https://api.stock.naver.com/chart/{market}/{kind}/{urllib.parse.quote(code)}/day{qs}"
         try:
             r = requests.get(url, headers={**_UA, "Referer": "https://m.stock.naver.com/"}, timeout=15)
             r.raise_for_status()
