@@ -28,13 +28,28 @@ def sparkline(values, width: int = 20) -> str:
     return "".join(_BLOCKS[int((v - lo) / (hi - lo) * (len(_BLOCKS) - 1))] for v in vals)
 
 
-def quickchart_url(title: str, rows, days: int = 120, points: int = 40,
+def _winsorize_volumes(recent):
+    """거래량 → 0~100 상대치. 소스(시트 당일 vs 네이버 백필) 스케일 차이로
+    한 점만 거대해지는 걸 막고(중앙값 3배로 winsorize), 축이 숨김이라 절대값은
+    의미 없으므로 0~100으로 압축해 URL 길이도 줄인다. (0은 그대로 0)."""
+    import statistics
+    vols = [float(r.get("volume") or 0) for r in recent]
+    nz = [v for v in vols if v > 0]
+    if not nz:
+        return [0] * len(vols), False
+    cap = statistics.median(nz) * 3  # 중앙값의 3배로 상한 (winsorize)
+    capped = [min(v, cap) for v in vols]
+    hi = max(capped) or 1
+    return [round(v / hi * 100) for v in capped], True  # 0~100 상대 높이
+
+
+def quickchart_url(title: str, rows, days: int = 120, points: int = 28,
                    width: int = 680, height: int = 340) -> str:
     """일별 시세 rows → 종가 라인 + 거래량 바 차트 이미지 URL.
 
-    가능한 한 '자기완결(self-contained) 인라인 URL'을 쓴다 — QuickChart 단축URL은
-    무료 생성 API의 rate-limit·만료로 Notion에서 이미지가 깨질 수 있어서다.
-    인라인이 Notion 한도(≤~1900자)를 넘을 때만 단축URL로 폴백한다.
+    자기완결 인라인 URL 우선(QuickChart 단축URL은 rate-limit/만료로 Notion에서
+    깨질 수 있음). 한도(≤~1900자) 초과 시에만 단축URL 폴백.
+    거래량은 이상치 상한 처리해 스케일 깨짐을 방지한다.
     """
     recent = rows[-days:]
     if len(recent) > points:
@@ -43,26 +58,35 @@ def quickchart_url(title: str, rows, days: int = 120, points: int = 40,
 
     labels = [r["date"][5:] for r in recent]  # MM-DD
     closes = [round(r["close"], 2) for r in recent]
+    volumes, has_vol = _winsorize_volumes(recent)
 
-    # 종가 추세선만 그린다. 거래량 막대는 소스(네이버 백필 vs 시트 당일)마다
-    # 스케일이 달라 한 막대만 거대해져 깨지므로 제외 — 거래량은 대시보드에 있다.
+    datasets = [{
+        "type": "line", "label": "종가", "data": closes, "yAxisID": "p",
+        "borderColor": "#2563eb", "borderWidth": 2, "fill": False,
+        "pointRadius": 0, "tension": 0.15,
+    }]
+    y_axes = [{"id": "p", "position": "left"}]
+    if has_vol:
+        datasets.append({
+            "type": "bar", "label": "거래량", "data": volumes, "yAxisID": "v",
+            "backgroundColor": "rgba(148,163,184,0.45)",
+        })
+        y_axes.append({"id": "v", "position": "right", "display": False,
+                       "ticks": {"beginAtZero": True}})
+
     config = {
-        "type": "line",
-        "data": {"labels": labels, "datasets": [{
-            "label": "종가", "data": closes,
-            "borderColor": "#2563eb", "borderWidth": 2, "fill": False,
-            "pointRadius": 0, "tension": 0.15,
-        }]},
+        "type": "bar",
+        "data": {"labels": labels, "datasets": datasets},
         "options": {
             "title": {"display": True, "text": title},
             "legend": {"display": False},
-            "scales": {"xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
+            "scales": {"yAxes": y_axes, "xAxes": [{"ticks": {"maxTicksLimit": 8}}]},
         },
     }
     c = urllib.parse.quote(json.dumps(config, separators=(",", ":"), ensure_ascii=False))
     inline = f"https://quickchart.io/chart?w={width}&h={height}&bkg=white&c={c}"
     if len(inline) <= 1900:
-        return inline  # 안정적인 자기완결 URL
+        return inline
     return _short_chart_url(config, width, height) or inline
 
 
