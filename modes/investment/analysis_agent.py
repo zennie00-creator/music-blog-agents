@@ -25,7 +25,7 @@ USER_TEMPLATE = """오늘 날짜: {date}
 아래는 오늘 수집한 시장 데이터와 신호입니다:
 
 {market_data}
-{thesis_block}{news_block}{earnings_block}
+{thesis_block}{news_block}{earnings_block}{credit_block}
 이 데이터·뉴스를 종합해 오늘의 시장·테크 브리핑을 마크다운으로 작성해 주세요.
 신호 섹션(다이버전스·반등 품질·RS·금리 커브 등)에 플래그가 떠 있으면,
 그 배경(수급·뉴스)과 함의를 반드시 해석해 주세요.
@@ -43,7 +43,7 @@ USER_TEMPLATE = """오늘 날짜: {date}
 ## 주요 목소리
 (위 헤드라인·소스에서 시장 관련 핵심 포인트 2~4개. 출처를 명시.
  재료가 없으면 "특기할 발언 없음")
-{earnings_section}{thesis_section}
+{earnings_section}{credit_section}{thesis_section}
 ## 오늘의 액션 (자산군별)
 (- 지수: 국면 판단 한 줄 / - 섹터(반도체 등): 비중 방향 한 줄 /
  - 주도주: 종목별 진입·관망·이탈 관점 한 줄씩. 반드시 신호·데이터 근거를 붙일 것)
@@ -64,6 +64,17 @@ EARNINGS_SECTION = """
  특히 포트폴리오·워치리스트 종목(알파벳/구글 등)은 보도가 있으면 반드시 포함하세요.
  헤드라인에 없는 구체 수치는 지어내지 말고 '헤드라인 기준'으로만 쓰세요.
  실적 보도가 없는 종목은 생략합니다.)
+"""
+
+CREDIT_INPUT = """
+{credit}
+"""
+
+CREDIT_SECTION = """
+## 신용·유동성 워치
+(위 '신용·유동성 워치 헤드라인'을 근거로, 오라클 CDS·신용 스프레드의 방향(확대/축소)과
+ 그 함의를 1~3문장으로. 시장 유동성·AI capex 부담(부채 조달) 관점에서 무엇을 시사하는지 해석.
+ 헤드라인에 없는 수치·수준은 지어내지 말 것. 관련 보도가 없으면 이 섹션은 생략합니다.)
 """
 
 THESIS_INPUT = """
@@ -102,6 +113,15 @@ def analyze_market(date: str, market_data: str, thesis: str = "") -> str:
     earnings_block = EARNINGS_INPUT.format(earnings=earns) if earns else ""
     earnings_section = EARNINGS_SECTION if earns else ""
 
+    # 신용·유동성 워치(오라클 CDS 등) — 관련 보도가 있을 때만 블록·섹션이 붙는다.
+    try:
+        credit = earnings.credit_watch_markdown()
+    except Exception as e:
+        print(f"  ⚠️ 신용 워치 수집 실패 (건너뜀): {e}")
+        credit = ""
+    credit_block = CREDIT_INPUT.format(credit=credit) if credit else ""
+    credit_section = CREDIT_SECTION if credit else ""
+
     user = USER_TEMPLATE.format(
         date=date,
         market_data=market_data,
@@ -109,6 +129,8 @@ def analyze_market(date: str, market_data: str, thesis: str = "") -> str:
         news_block=news_block,
         earnings_block=earnings_block,
         earnings_section=earnings_section,
+        credit_block=credit_block,
+        credit_section=credit_section,
         thesis_section=thesis_section,
     )
     system = SYSTEM_PROMPT + "\n\n" + sources.prompt_block()
