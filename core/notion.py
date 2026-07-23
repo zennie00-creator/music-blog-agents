@@ -30,6 +30,11 @@ def markdown_to_blocks(md: str):
         stripped = line.strip()
         if not stripped:
             continue
+        # Claude가 헤딩을 굵게 감싸는 경우(**## 제목**)가 있어 헤딩 인식이 깨진다.
+        # 줄 전체를 감싼 ** 를 벗겨 헤딩 마커가 앞에 오게 정규화한다.
+        if stripped.startswith("**") and stripped.endswith("**") and \
+                stripped[2:-2].lstrip().startswith("#"):
+            stripped = stripped[2:-2].strip()
         if stripped.startswith("### "):
             blocks.append({"type": "heading_3", "heading_3": {"rich_text": _rich_text(stripped[4:])}})
         elif stripped.startswith("## "):
