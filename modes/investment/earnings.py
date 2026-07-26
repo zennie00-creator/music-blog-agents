@@ -46,6 +46,15 @@ CREDIT_WATCH = [
      'Oracle ("credit default swap" OR CDS OR "credit spread" OR bond OR debt OR capex)'),
 ]
 
+# 반도체 메모리 가격 워치 — DRAM/NAND 현물·고정거래가·HBM. 무료 가격 API가 없어
+# 뉴스 기반으로 '오르는 중/멈춤/꺾임' 방향을 잡는다(TrendForce·DRAMeXchange 등).
+MEMORY_WATCH = [
+    ("DRAM 현물가(스팟)", "DRAM spot price TrendForce"),
+    ("메모리 고정거래가(계약가)", "DRAM contract price memory"),
+    ("NAND 플래시 가격", "NAND flash price"),
+    ("HBM 공급·계약", "HBM memory supply contract"),
+]
+
 _MAX_COMPANIES = 20
 _MAX_PER_COMPANY = 4
 _MAX_PER_WATCH = 4
@@ -141,4 +150,20 @@ def credit_watch_markdown() -> str:
         return ""
     header = ("아래는 신용·유동성 워치 항목의 최근 헤드라인입니다"
               " (Google News, 최근 7일):")
+    return header + "\n\n" + "\n\n".join(groups)
+
+
+def memory_watch_markdown() -> str:
+    """반도체 메모리 가격(DRAM·NAND·HBM) 헤드라인 블록. 보도 0건이면 빈 문자열."""
+    groups = []
+    for label, query in MEMORY_WATCH:
+        items = _news_rss(query, when="14d")[:_MAX_PER_WATCH]
+        if not items:
+            continue
+        groups.append(_render_group(label, items))
+        print(f"  🧠 메모리 가격 {label}: {len(items)}건")
+    if not groups:
+        return ""
+    header = ("아래는 반도체 메모리 가격(DRAM·NAND·HBM) 관련 최근 헤드라인입니다"
+              " (Google News, 최근 14일):")
     return header + "\n\n" + "\n\n".join(groups)
