@@ -34,7 +34,7 @@ USER_TEMPLATE = """오늘 날짜: {date}
 아래는 오늘 수집한 시장 데이터와 신호입니다:
 
 {market_data}
-{thesis_block}{news_block}{earnings_block}{credit_block}
+{thesis_block}{news_block}{earnings_block}{memory_block}{credit_block}
 이 데이터·뉴스를 종합해 오늘의 시장·테크 브리핑을 마크다운으로 작성해 주세요.
 신호 섹션(다이버전스·반등 품질·RS·금리 커브 등)에 플래그가 떠 있으면,
 그 배경(수급·뉴스)과 함의를 반드시 해석해 주세요.
@@ -52,7 +52,7 @@ USER_TEMPLATE = """오늘 날짜: {date}
 ## 주요 목소리
 (위 헤드라인·소스에서 시장 관련 핵심 포인트 2~4개. 출처를 명시.
  재료가 없으면 "특기할 발언 없음")
-{earnings_section}{credit_section}{thesis_section}
+{earnings_section}{memory_section}{credit_section}{thesis_section}
 ## 오늘의 액션 (자산군별)
 (- 지수: 국면 판단 한 줄 / - 섹터(반도체 등): 비중 방향 한 줄 /
  - 주도주: 종목별 진입·관망·이탈 관점 한 줄씩. 반드시 신호·데이터 근거를 붙일 것)
@@ -75,6 +75,21 @@ EARNINGS_SECTION = """
  특히 포트폴리오·워치리스트 종목(알파벳/구글 등)은 보도가 있으면 반드시 포함하세요.
  헤드라인에 없는 구체 수치는 지어내지 말고 '헤드라인 기준'으로만 쓰세요.
  실적 보도가 없는 종목은 생략합니다.)
+"""
+
+MEMORY_INPUT = """
+{memory}
+"""
+
+MEMORY_SECTION = """
+## 반도체 메모리 가격
+(위 '반도체 메모리 가격 헤드라인'을 근거로 방향 위주로:
+ - 일일 현물가(스팟): 오르는 중 / 멈춤 / 추세 꺾임 중 무엇인지
+ - 월간 고정거래가: 나왔다면 방향·폭. 일일 스팟 하락이 진짜인지 '확정 도장' 여부
+ - HBM·공급: 계약·공급 코멘트 (SK하이닉스 실적 관련이면 함께)
+ - 분기 계약가 인상률: 새 수치가 보도됐으면 반영 (없으면 생략)
+ - 함의: 메모리 사이클과 SK하이닉스·마이크론 전제에 주는 시사점 한 줄
+ 헤드라인에 없는 수치는 지어내지 말 것. 관련 보도가 없으면 이 섹션은 생략합니다.)
 """
 
 CREDIT_INPUT = """
@@ -124,6 +139,15 @@ def analyze_market(date: str, market_data: str, thesis: str = "") -> str:
     earnings_block = EARNINGS_INPUT.format(earnings=earns) if earns else ""
     earnings_section = EARNINGS_SECTION if earns else ""
 
+    # 반도체 메모리 가격(DRAM·NAND·HBM) 워치 — 관련 보도가 있을 때만 붙는다.
+    try:
+        memory = earnings.memory_watch_markdown()
+    except Exception as e:
+        print(f"  ⚠️ 메모리 가격 수집 실패 (건너뜀): {e}")
+        memory = ""
+    memory_block = MEMORY_INPUT.format(memory=memory) if memory else ""
+    memory_section = MEMORY_SECTION if memory else ""
+
     # 신용·유동성 워치(오라클 CDS 등) — 관련 보도가 있을 때만 블록·섹션이 붙는다.
     try:
         credit = earnings.credit_watch_markdown()
@@ -140,6 +164,8 @@ def analyze_market(date: str, market_data: str, thesis: str = "") -> str:
         news_block=news_block,
         earnings_block=earnings_block,
         earnings_section=earnings_section,
+        memory_block=memory_block,
+        memory_section=memory_section,
         credit_block=credit_block,
         credit_section=credit_section,
         thesis_section=thesis_section,
