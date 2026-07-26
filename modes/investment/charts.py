@@ -8,6 +8,7 @@
 """
 import json
 import urllib.parse
+from datetime import date as _date
 
 import requests
 
@@ -114,19 +115,28 @@ def _align_volumes_real(recent):
     return out, True
 
 
+def _ytd_window(rows, days: int):
+    """올해 연초(1/1)부터의 구간으로 통일. 종목별 시작일이 달라도 x축 기준을 맞춘다.
+    올해 데이터가 너무 짧으면(연초·신규상장) 최근 days개로 폴백."""
+    year_start = f"{_date.today().year}-01-01"
+    ytd = [r for r in rows if r["date"] >= year_start]
+    return ytd if len(ytd) >= 2 else rows[-days:]
+
+
 def render_chart_png(rows, days: int = 120, width_px: int = 760,
                      height_px: int = 420, dpi: int = 100) -> bytes:
     """일별 시세 rows → 종가 추세선(위) + 거래량 막대(아래) PNG 바이트.
 
-    QuickChart(외부 URL을 Notion이 가져가는 방식)를 쓰지 않고 서버에서 직접 렌더해
-    Notion에 '파일'로 올린다 → 외부 fetch 실패가 원천 차단된다. 한글은 폰트 문제를
-    피하려 이미지에 넣지 않고(날짜·숫자만) 종목명은 Notion 캡션으로 붙인다.
-    거래량은 소스 단위만 정렬하고 봉우리는 그대로 둔다(위 안 자름)."""
+    구간은 '올해 연초부터'로 통일한다(종목마다 상장·백필 시작일이 달라 x축이
+    제각각이던 문제 해소). QuickChart(외부 URL을 Notion이 가져가는 방식)를 쓰지
+    않고 서버에서 직접 렌더해 Notion에 '파일'로 올린다 → 외부 fetch 실패가 원천
+    차단된다. 한글은 폰트 문제를 피하려 이미지에 넣지 않고(날짜·숫자만) 종목명은
+    Notion 캡션으로 붙인다. 거래량은 소스 단위만 정렬하고 봉우리는 그대로 둔다."""
     import matplotlib
     matplotlib.use("Agg")  # 디스플레이 없는 러너용
     import matplotlib.pyplot as plt
 
-    recent = rows[-days:]
+    recent = _ytd_window(rows, days)
     x = list(range(len(recent)))
     closes = [r["close"] for r in recent]
     volumes, has_vol = _align_volumes_real(recent)
