@@ -8,6 +8,7 @@
 """
 import json
 import urllib.parse
+from datetime import date as _date
 
 import requests
 
@@ -114,19 +115,28 @@ def _align_volumes_real(recent):
     return out, True
 
 
+def _ytd_window(rows, days: int):
+    """올해 연초(1/1)부터의 구간으로 통일. 종목별 시작일이 달라도 x축 기준을 맞춘다.
+    올해 데이터가 너무 짧으면(연초·신규상장) 최근 days개로 폴백."""
+    year_start = f"{_date.today().year}-01-01"
+    ytd = [r for r in rows if r["date"] >= year_start]
+    return ytd if len(ytd) >= 2 else rows[-days:]
+
+
 def render_chart_png(rows, days: int = 120, width_px: int = 760,
                      height_px: int = 420, dpi: int = 100) -> bytes:
     """일별 시세 rows → 종가 추세선(위) + 거래량 막대(아래) PNG 바이트.
 
-    QuickChart(외부 URL을 Notion이 가져가는 방식)를 쓰지 않고 서버에서 직접 렌더해
-    Notion에 '파일'로 올린다 → 외부 fetch 실패가 원천 차단된다. 한글은 폰트 문제를
-    피하려 이미지에 넣지 않고(날짜·숫자만) 종목명은 Notion 캡션으로 붙인다.
-    거래량은 소스 단위만 정렬하고 봉우리는 그대로 둔다(위 안 자름)."""
+    구간은 '올해 연초부터'로 통일한다(종목마다 상장·백필 시작일이 달라 x축이
+    제각각이던 문제 해소). QuickChart(외부 URL을 Notion이 가져가는 방식)를 쓰지
+    않고 서버에서 직접 렌더해 Notion에 '파일'로 올린다 → 외부 fetch 실패가 원천
+    차단된다. 한글은 폰트 문제를 피하려 이미지에 넣지 않고(날짜·숫자만) 종목명은
+    Notion 캡션으로 붙인다. 거래량은 소스 단위만 정렬하고 봉우리는 그대로 둔다."""
     import matplotlib
     matplotlib.use("Agg")  # 디스플레이 없는 러너용
     import matplotlib.pyplot as plt
 
-    recent = rows[-days:]
+    recent = _ytd_window(rows, days)
     x = list(range(len(recent)))
     closes = [r["close"] for r in recent]
     volumes, has_vol = _align_volumes_real(recent)
@@ -172,6 +182,125 @@ def render_chart_png(rows, days: int = 120, width_px: int = 760,
     fig.savefig(buf, format="png", facecolor="white", bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     return buf.getvalue()
+
+
+# 매물대(volume-by-price) 오버랩 — 개별 종목의 원가대·매물벽을 본다.
+PROFILE_SECTION_KEYWORDS = ("주도주", "기술주")  # 종목만 (지수·금리·환율 제외)
+MAX_PROFILES = 16
+PROFILE_YEARS = 2            # 매물대 누적 창 (2년)
+PROFILE_HALF_LIFE = 120      # 최근일 가중 반감기 (거래일 ≈ 6개월)
+
+
+def _window_years(rows, years: int = PROFILE_YEARS):
+    """최근 N년 구간. 이력이 짧으면 있는 만큼."""
+    from datetime import date, timedelta
+    cutoff = (date.today() - timedelta(days=365 * years)).isoformat()
+    w = [r for r in rows if r["date"] >= cutoff]
+    return w if len(w) >= 2 else rows
+
+
+def _profile_bins(rows, bins: int = 40, half_life: int = PROFILE_HALF_LIFE,
+                  weighted: bool = True):
+    """종가·거래량만으로 가격대별 거래량 누적. weighted면 최근일에 지수 가중(감쇠).
+    → (centers, buckets, lo, hi). OHLC가 없어 '종가 기준' 근사다."""
+    closes = [r["close"] for r in rows]
+    lo, hi = min(closes), max(closes)
+    span = (hi - lo) or 1.0
+    buckets = [0.0] * bins
+    n = len(rows)
+    for idx, r in enumerate(rows):
+        w = 0.5 ** ((n - 1 - idx) / half_life) if weighted else 1.0
+        b = min(bins - 1, int((r["close"] - lo) / span * bins))
+        buckets[b] += (r.get("volume") or 0.0) * w
+    centers = [lo + span * (i + 0.5) / bins for i in range(bins)]
+    return centers, buckets, lo, hi
+
+
+def render_price_with_profile_png(rows, years: int = PROFILE_YEARS, bins: int = 40,
+                                  weighted: bool = True, width_px: int = 760,
+                                  height_px: int = 440, dpi: int = 100) -> bytes:
+    """2년 종가선 + 우측 여백에 매물대(가격대별 거래량) 오버랩 PNG.
+
+    가격 y축을 공유해 '지금 가격이 어느 매물벽 아래/위에 있는지'를 한눈에 본다.
+    위(현재가 초과)=저항(빨강), 아래=지지(청록). POC(최대 거래량대)·현재가 표시.
+    한글 폰트 이슈를 피해 이미지 라벨은 영문/숫자만 쓴다(종목명은 Notion 캡션)."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    recent = _window_years(rows, years)
+    x = list(range(len(recent)))
+    closes = [r["close"] for r in recent]
+    centers, buckets, lo, hi = _profile_bins(recent, bins, weighted=weighted)
+    now = closes[-1]
+    maxb = max(buckets) or 1.0
+    poc = centers[max(range(len(buckets)), key=lambda i: buckets[i])]
+    below = sum(b for c, b in zip(centers, buckets) if c <= now)
+    pct_below = below / (sum(buckets) or 1.0) * 100
+
+    fig, ax = plt.subplots(figsize=(width_px / dpi, height_px / dpi), dpi=dpi)
+
+    # 매물대 막대: 우측 끝에서 왼쪽으로 자라게 (오른쪽 여백 ~26%), 반투명 → 가격선 위로 비침
+    frac = 0.26 * len(recent)
+    bin_h = (hi - lo) / bins * 0.9
+    x_right = len(recent) - 1
+    for c, b in zip(centers, buckets):
+        w = b / maxb * frac
+        ax.barh(c, w, left=x_right - w, height=bin_h,
+                color="#ef4444" if c > now else "#14b8a6", alpha=0.33, zorder=1)
+
+    ax.plot(x, closes, color="#2563eb", linewidth=1.6, zorder=3)
+    ax.axhline(now, color="#f59e0b", linestyle="--", linewidth=1.2, zorder=2)
+    ax.text(0, now, f"Now {now:,.2f} ", va="bottom", ha="left", fontsize=8,
+            color="#b45309", weight="bold")
+    ax.axhline(poc, color="#1d4ed8", linestyle=":", linewidth=1.0, zorder=2)
+    ax.text(0, poc, f"POC {poc:,.0f} ", va="bottom", ha="left", fontsize=8, color="#1d4ed8")
+
+    hl_mo = round(PROFILE_HALF_LIFE / 20)  # 거래일→월 근사
+    basis = (f"Price + Volume-by-Price  |  {years}Y  |  "
+             f"{'recency-weighted (half-life ~%dmo)' % hl_mo if weighted else 'raw volume'}  |  "
+             f"{pct_below:.0f}% vol below now")
+    ax.set_title(basis, fontsize=8.5)
+    ax.grid(True, axis="y", alpha=0.15)
+    ax.margins(x=0.01)
+    for s in ("top", "right"):
+        ax.spines[s].set_visible(False)
+    ax.tick_params(labelsize=8)
+
+    labels = [r["date"][2:7] for r in recent]  # YY-MM
+    n = len(labels)
+    step = max(1, n // 8)
+    ticks = list(range(0, n, step))
+    ax.set_xticks(ticks)
+    ax.set_xticklabels([labels[i] for i in ticks], fontsize=7.5)
+
+    import io
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", facecolor="white", bbox_inches="tight", pad_inches=0.15)
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def profile_specs(ctx, keywords=PROFILE_SECTION_KEYWORDS, limit: int = MAX_PROFILES):
+    """주도주·기술주 종목 → [(종목명, 매물대PNG)]. 거래량 없거나 이력 짧으면 스킵."""
+    specs = []
+    for title, syms in ctx.get("sections", []):
+        if not any(k in title for k in keywords):
+            continue
+        for sym in syms:
+            if len(specs) >= limit:
+                break
+            rows = ctx["histories"][sym]
+            if len(rows) < MIN_CHART_HISTORY:
+                continue
+            if not any((r.get("volume") or 0) > 0 for r in rows):
+                continue  # 거래량 없는 종목은 매물대 불가
+            name = ctx["names"].get(sym, sym)
+            try:
+                specs.append((name, render_price_with_profile_png(rows)))
+            except Exception as e:
+                print(f"  ⚠️ 매물대 렌더 실패({name}): {e}")
+    return specs
 
 
 def chart_specs(ctx, keywords=CHART_SECTION_KEYWORDS, limit: int = MAX_CHARTS):

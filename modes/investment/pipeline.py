@@ -106,6 +106,12 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
     except Exception as e:
         print(f"  ⚠️ 차트 생성 실패 (건너뜀): {e}")
 
+    profile_specs = []  # 매물대(가격대별 거래량) 오버랩 — 종목별, 별도 헤딩 아래
+    try:
+        profile_specs = charts.profile_specs(ctx)
+    except Exception as e:
+        print(f"  ⚠️ 매물대 생성 실패 (건너뜀): {e}")
+
     result = {"date": today, "brief": brief, "notion_url": "", "local_path": ""}
 
     if save_local:
@@ -118,7 +124,8 @@ def run_brief(publish: bool = True, save_local: bool = True) -> dict:
     if publish:
         print("\n📤 [3/3] Notion 발행 중...")
         try:
-            url = publish_page(f"📊 모닝 브리핑 — {today}", brief, image_specs=chart_specs)
+            url = publish_page(f"📊 모닝 브리핑 — {today}", brief,
+                               image_specs=chart_specs, profile_specs=profile_specs)
             result["notion_url"] = url
             print(f"✅ 발행 완료: {url}")
         except Exception as e:
@@ -180,6 +187,12 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     except Exception as e:
         print(f"  ⚠️ 차트 생성 실패 (건너뜀): {e}")
 
+    profile_specs = []  # 매물대(가격대별 거래량) 오버랩 — 종목별, 별도 헤딩 아래
+    try:
+        profile_specs = charts.profile_specs(ctx)
+    except Exception as e:
+        print(f"  ⚠️ 매물대 생성 실패 (건너뜀): {e}")
+
     result = {"date": today, "journal": journal, "notion_url": "", "local_path": ""}
 
     if save_local:
@@ -189,7 +202,8 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     if publish:
         print("\n📤 [4/4] Notion 발행 중...")
         try:
-            url = publish_page(f"📈 투자 일지 — {today}", journal, image_specs=chart_specs)
+            url = publish_page(f"📈 투자 일지 — {today}", journal,
+                               image_specs=chart_specs, profile_specs=profile_specs)
             result["notion_url"] = url
             print(f"✅ 발행 완료: {url}")
         except Exception as e:

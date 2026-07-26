@@ -157,7 +157,7 @@ def _title_property_name(database_id: str) -> str:
 
 
 def publish_page(title: str, markdown_body: str, database_id: str = "",
-                 image_specs=None) -> str:
+                 image_specs=None, profile_specs=None) -> str:
     """마크다운 본문을 Notion 데이터베이스에 새 페이지로 발행하고 URL을 반환.
 
     제목만으로 먼저 페이지를 만든 뒤 본문 블록을 append한다. 이렇게 하면
@@ -187,5 +187,11 @@ def publish_page(title: str, markdown_body: str, database_id: str = "",
 
     # 3) 차트 PNG를 파일로 업로드해 이미지 블록으로 append
     _append_chart_images(page_id, image_specs)
+
+    # 4) 매물대(volume-by-price) 오버랩 차트는 별도 헤딩 아래에 붙인다
+    if profile_specs:
+        _append_blocks(page_id, [{"type": "heading_2", "heading_2": {
+            "rich_text": _rich_text("매물대 (2년 · 최근일 가중)")}}])
+        _append_chart_images(page_id, profile_specs)
 
     return page.get("url", "")
