@@ -13,7 +13,7 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-27 · v19 (코치 어투 재설계 — 절제된 베테랑 톤)"
+APP_VERSION = "2026-07-27 · v20 (코치 어투 절제 · '훈련 노트' · 유동 일정 인지)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
@@ -208,11 +208,12 @@ with st.sidebar:
                     placeholder="코치에게 답장한 내용에서 '지속적 사실·습관·주의사항'을 "
                                 "자동으로 추려 쌓습니다. (예: 명상 매일, 오른쪽 무릎 주의) "
                                 "직접 고치거나 지워도 됩니다.")
-        coach_fw = st.text_area("🏋️ 훈련 프레임워크 (코치 플랜)", value=p.get("coach_framework", ""),
+        coach_fw = st.text_area("📒 훈련 노트", value=p.get("coach_framework", ""),
                     height=180,
-                    placeholder="목표·제약·주간 템플릿·벤치마크·베이스라인 등 코치가 매번 "
-                                "참고하는 '살아있는 플랜'. 아래 캐치업으로 한 번 세워두면 "
-                                "이후엔 일지를 쓰며 자동으로 발전합니다. 직접 고쳐도 됩니다.")
+                    placeholder="목표·제약·기본 리듬·벤치마크 등 코치가 매번 참고하는 "
+                                "'살아있는 노트'. 주간 리듬은 고정 시간표가 아니라 유동적 "
+                                "기본값이라, 사정에 맞춰 코치가 조정합니다. 아래 캐치업으로 "
+                                "한 번 세워두면 이후엔 일지를 쓰며 자동으로 발전합니다.")
         notes = st.text_input("기타", value=p.get("notes", ""),
                     placeholder="예: 오른쪽 무릎 주의")
         if st.button("💾 저장", use_container_width=True):
@@ -221,16 +222,16 @@ with st.sidebar:
                  "style_memory": style_mem, "coach_memory": coach_mem,
                  "coach_framework": coach_fw, "notes": notes})
 
-        # ── 캐치업: 다른 코치(예: Whoop) 대화를 프레임워크로 한 번에 가져오기 ──
+        # ── 캐치업: 다른 코치(예: Whoop) 대화를 훈련 노트로 한 번에 가져오기 ──
         with st.expander("🧠 코치 캐치업 — 다른 코치 대화 가져오기 (한 번만)"):
             st.caption("Whoop 코치와 나눈 대화나 훈련 메모를 붙여넣거나 파일로 올리면, "
-                       "코치가 그걸 '훈련 프레임워크'로 정리합니다. 한 번 세워두면 "
+                       "코치가 그걸 '훈련 노트'로 정리합니다. 한 번 세워두면 "
                        "이후 일지에서 자동으로 이어집니다. (매번 할 필요 없어요)")
             src_text = st.text_area("대화/메모 붙여넣기", key="cf_src",
                         placeholder="Whoop 코치 대화를 그대로 붙여넣으세요...")
             up = st.file_uploader("또는 .md / .txt 파일 업로드", type=["md", "txt"],
                         key="cf_file")
-            if st.button("📋 프레임워크로 정리하기", use_container_width=True):
+            if st.button("📋 훈련 노트로 정리하기", use_container_width=True):
                 text = (src_text or "").strip()
                 if not text and up is not None:
                     try:
@@ -240,7 +241,7 @@ with st.sidebar:
                 if not text:
                     st.warning("붙여넣거나 파일을 올려주세요.")
                 else:
-                    with st.spinner("코치가 대화를 훈련 프레임워크로 정리하는 중..."):
+                    with st.spinner("코치가 대화를 훈련 노트로 정리하는 중..."):
                         try:
                             merged = coach_agent.distill_framework(
                                 p.get("coach_framework", ""), text)
@@ -251,7 +252,7 @@ with st.sidebar:
                         newp = dict(p)
                         newp["coach_framework"] = merged
                         _save_profile(profile_store.WORKOUT_PROFILE, newp)
-                        st.success("✅ 프레임워크를 세웠어요! 위 '훈련 프레임워크' 칸에서 확인·수정하세요.")
+                        st.success("✅ 훈련 노트를 정리했어요! 위 '훈련 노트' 칸에서 확인·수정하세요.")
                         st.rerun()
 
     elif st.session_state.mode == "devlog":
