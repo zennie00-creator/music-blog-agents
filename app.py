@@ -13,7 +13,7 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-27 · v20 (코치 어투 절제 · '훈련 노트' · 유동 일정 인지)"
+APP_VERSION = "2026-07-27 · v21 (일지에서 코치 코멘트 분리 · 넘겨짚기 억제)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
