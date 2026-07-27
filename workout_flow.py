@@ -11,6 +11,7 @@ import streamlit as st
 
 import whoop_agent
 import workout_agent
+import coach_agent
 import notion_agent
 from core import writer
 from core import draft
@@ -347,12 +348,13 @@ def run():
         if not st.session_state.wk_analysis:
             with st.spinner("코치가 최근 추세와 함께 오늘 운동을 분석하는 중..."):
                 # 데이터 수정 후 재분석해도 코치에게 답장한 내용은 계속 기억
-                st.session_state.wk_analysis = workout_agent.analyze_workout(
+                st.session_state.wk_analysis = coach_agent.analyze(
                     st.session_state.wk_summary, prof,
+                    framework=prof.get("coach_framework", ""),
                     trend=st.session_state.get("wk_trend", ""),
+                    coach_log=st.session_state.get("wk_coach_log", ""),
                     user_note=st.session_state.get("wk_coach_notes") or "",
-                    whoop_note=st.session_state.get("wk_whoop_note") or "",
-                    coach_log=st.session_state.get("wk_coach_log", ""))
+                    whoop_note=st.session_state.get("wk_whoop_note") or "")
             st.rerun()
 
         if not st.session_state.wk_blog:
@@ -386,12 +388,13 @@ def run():
                         (st.session_state.get("wk_coach_notes") or "") + "\n" + coach_note).strip()
                 st.session_state.wk_whoop_note = whoop_note.strip()
                 with st.spinner("코치가 답장을 반영해 다시 분석하는 중..."):
-                    st.session_state.wk_analysis = workout_agent.analyze_workout(
+                    st.session_state.wk_analysis = coach_agent.analyze(
                         st.session_state.wk_summary, prof,
+                        framework=prof.get("coach_framework", ""),
                         trend=st.session_state.get("wk_trend", ""),
+                        coach_log=st.session_state.get("wk_coach_log", ""),
                         user_note=st.session_state.get("wk_coach_notes", ""),
-                        whoop_note=st.session_state.wk_whoop_note,
-                        coach_log=st.session_state.get("wk_coach_log", ""))
+                        whoop_note=st.session_state.wk_whoop_note)
                 st.rerun()
             if ((st.session_state.get("wk_coach_notes") or st.session_state.get("wk_whoop_note"))
                     and st.session_state.wk_blog):
