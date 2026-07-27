@@ -13,7 +13,7 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-07-27 · v18 (전담 코치 에이전트 · 훈련 프레임워크 · 캐치업)"
+APP_VERSION = "2026-07-27 · v19 (코치 어투 재설계 — 절제된 베테랑 톤)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
