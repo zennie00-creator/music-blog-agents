@@ -9,7 +9,16 @@ theme_breadth가 '내가 미리 정의한 바스켓'을 보는 것과 달리, �
 '시장이 오늘 한 덩어리로 취급한 종목들'이다. 이름은 붙이지 않는다 —
 그 해석(무슨 테마인지·왜 묶였는지)은 분석 단계에서 뉴스와 대조해 하게 한다.
 """
+import json
+import os
+
+from core import config
+
 TITLE = "동적 클러스터 — 오늘 같이 움직인 종목군 (자동 감지)"
+
+# 클러스터 구성 이력 — 어제와 무엇이 달라졌는지(합류·이탈·신규 그룹) 비교용.
+# signal_log/는 Actions가 매일 커밋하므로 이력이 보존된다.
+_STORE = os.path.join(config.ROOT_DIR, "signal_log", "clusters.jsonl")
 
 CORR_WINDOW = 20      # 상관 계산 거래일
 MIN_MOVE_PCT = 1.5    # 오늘 이만큼(절대값) 움직인 종목만 후보
@@ -122,6 +131,77 @@ def _kind(avg_corr):
     return "🆕 새로 묶인 그룹 — 기존 상관이 낮은데 오늘 함께 움직임 (새 내러티브 형성 가능)"
 
 
+def _today_of(ctx):
+    dates = [rows[-1]["date"] for rows in ctx["histories"].values() if rows]
+    return max(dates) if dates else ""
+
+
+def _load_prev(today):
+    """오늘 이전의 가장 최근 클러스터 스냅숏 → (날짜, {방향: [심볼]}). 없으면 (None, {})."""
+    if not os.path.exists(_STORE):
+        return None, {}
+    best = None
+    with open(_STORE, encoding="utf-8") as f:
+        for ln in f:
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                rec = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("date") and rec["date"] < today:
+                if best is None or rec["date"] > best["date"]:
+                    best = rec
+    return (best["date"], best.get("groups", {})) if best else (None, {})
+
+
+def _save(today, groups):
+    """오늘 클러스터 구성을 저장 (같은 날짜는 덮어씀)."""
+    lines = []
+    if os.path.exists(_STORE):
+        with open(_STORE, encoding="utf-8") as f:
+            for ln in f:
+                ln = ln.strip()
+                if not ln:
+                    continue
+                try:
+                    if json.loads(ln).get("date") == today:
+                        continue
+                except json.JSONDecodeError:
+                    continue
+                lines.append(ln)
+    lines.append(json.dumps({"date": today, "groups": groups}, ensure_ascii=False))
+    os.makedirs(os.path.dirname(_STORE), exist_ok=True)
+    with open(_STORE, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+def _change_note(ctx, prev_date, prev, cur):
+    """어제 대비 구성 변화 코멘트. 변화가 없으면 None."""
+    if not prev_date:
+        return None
+    notes = []
+    for key, label in (("down", "하락 그룹"), ("up", "상승 그룹")):
+        old, new = set(prev.get(key, [])), set(cur.get(key, []))
+        if not new:
+            if old:
+                notes.append(f"{label} 해소")
+            continue
+        if not old:
+            notes.append(f"{label} 신규 형성({len(new)}종목)")
+            continue
+        joined = [ctx["names"].get(s, s) for s in sorted(new - old)]
+        left = [ctx["names"].get(s, s) for s in sorted(old - new)]
+        if joined:
+            notes.append(f"{label} 신규 합류: {', '.join(joined)}")
+        if left:
+            notes.append(f"{label} 이탈: {', '.join(left)}")
+    if not notes:
+        return None
+    return f"- 🔄 전일({prev_date}) 대비 변화 — " + " / ".join(notes)
+
+
 def run(ctx):
     clusters = find_clusters(ctx)
     if not clusters:
@@ -130,6 +210,7 @@ def run(ctx):
              "(바스켓을 미리 정의하지 않고, 오늘 함께 크게 움직인 종목을 자동으로 묶었다. "
              f"평균 상관은 최근 {CORR_WINDOW}일 기준 — 낮은데 함께 움직였다면 '새 그룹 형성'이다. "
              "무슨 테마인지·왜 묶였는지는 뉴스와 대조해 해석할 것)"]
+    cur = {}
     for members, avg, corr in clusters:
         names = ", ".join(ctx["names"].get(m, m) for m in members)
         tone = "동반 하락" if avg < 0 else "동반 상승"
@@ -137,4 +218,17 @@ def run(ctx):
         lines.append(f"- {mark} {len(members)}종목 {tone} 평균 {avg:+.1f}% "
                      f"(평균 상관 {corr:.2f} — {_kind(corr)})")
         lines.append(f"  · {names}")
+        cur["down" if avg < 0 else "up"] = list(members)
+
+    # 구성 변화(합류·이탈·신규 형성)는 그 자체가 신호 — 전일과 비교해 남긴다.
+    today = _today_of(ctx)
+    if today:
+        try:
+            prev_date, prev = _load_prev(today)
+            note = _change_note(ctx, prev_date, prev, cur)
+            if note:
+                lines.append(note)
+            _save(today, cur)
+        except Exception as e:
+            print(f"  ⚠️ 클러스터 변화 비교 실패 (건너뜀): {e}")
     return "\n".join(lines)
