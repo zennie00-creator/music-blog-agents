@@ -48,6 +48,10 @@ CREDIT_WATCH = [
     ("AI 자본순환(순환투자)",
      'Nvidia ("circular financing" OR "circular deal" OR "vendor financing") '
      'OR "AI capex bubble" OR (OpenAI Nvidia investment)'),
+    ("AI 투심·회의론 코멘트",
+     '("AI trade" OR "AI stocks" OR semiconductor) '
+     '(analyst OR investor OR strategist OR "hedge fund") '
+     '(skeptic OR bubble OR unwind OR "sentiment" OR overbought OR oversold)'),
 ]
 
 # 반도체 메모리 가격 워치 — DRAM/NAND 현물·고정거래가·HBM. 무료 가격 API가 없어
