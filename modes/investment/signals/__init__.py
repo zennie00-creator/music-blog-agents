@@ -14,9 +14,11 @@ ctx(dict) 구성 (market_data.collect_context() 참조):
 """
 from modes.investment.signals import (
     divergence, rebound, put_call, yield_curve, relative_strength, vcp, adr_gap,
+    theme_breadth, macro_regime,
 )
 
-ALL = [yield_curve, divergence, rebound, relative_strength, vcp, adr_gap, put_call]
+ALL = [macro_regime, theme_breadth, yield_curve, divergence, rebound,
+       relative_strength, vcp, adr_gap, put_call]
 
 
 def run_all(ctx) -> str:
