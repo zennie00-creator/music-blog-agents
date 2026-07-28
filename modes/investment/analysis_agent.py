@@ -34,7 +34,7 @@ USER_TEMPLATE = """오늘 날짜: {date}
 아래는 오늘 수집한 시장 데이터와 신호입니다:
 
 {market_data}
-{thesis_block}{news_block}{earnings_block}{memory_block}{credit_block}
+{thesis_block}{news_block}{earnings_block}{memory_block}{credit_block}{demand_block}
 이 데이터·뉴스를 종합해 오늘의 시장·테크 브리핑을 마크다운으로 작성해 주세요.
 신호 섹션(매크로 국면 보드·테마 바스켓·다이버전스·반등 품질·RS·금리 커브 등)에
 플래그가 떠 있으면, 그 배경(수급·뉴스)과 함의를 반드시 해석해 주세요.
@@ -70,11 +70,14 @@ USER_TEMPLATE = """오늘 날짜: {date}
 ## 주요 목소리
 (위 헤드라인·소스에서 시장 관련 핵심 포인트 2~4개. 출처를 명시.
  재료가 없으면 "특기할 발언 없음")
-{earnings_section}{memory_section}{credit_section}{thesis_section}
+{earnings_section}{memory_section}{credit_section}{demand_section}{thesis_section}
 ## 시나리오 점검 (무엇이 이 판단을 뒤집나)
 (오늘의 지배적 우려·내러티브를 한 줄로 특정한 뒤, 양방향 반증 조건을 쓰세요:
  - 과도한 우려였다고 판명되려면: 앞으로 어떤 데이터·이벤트·가격 행동이 나와야 하는지
    구체적으로 (예: 특정 지표 반등, 실적·가이던스 확인, 거래량 동반 회복, 가격 회복 수준)
+   오늘의 우려가 AI 순환출자·capex 거품이라면, 반증은 결국 '수요가 실물'이라는 증거다
+   — AI 매출 기여 수치, 도입 기업의 비용절감·생산성 개선, 이익·현금흐름 범위 내 capex.
+   무엇이 확인되면 우려가 과했다고 볼지 그 관측 조건을 구체적으로 쓸 것.
  - 진짜 추세 전환이라면: 어떤 것이 추가로 확인될 것인지
  각 2~3개 불릿, 관찰 가능한 조건으로. '지켜보자' 같은 모호한 말은 금지.)
 
@@ -114,6 +117,22 @@ MEMORY_SECTION = """
  - HBM·공급: 계약·공급 코멘트 (SK하이닉스 실적 관련이면 함께)
  - 분기 계약가 인상률: 새 수치가 보도됐으면 반영 (없으면 생략)
  - 함의: 메모리 사이클과 SK하이닉스·마이크론 전제에 주는 시사점 한 줄
+ 헤드라인에 없는 수치는 지어내지 말 것. 관련 보도가 없으면 이 섹션은 생략합니다.)
+"""
+
+DEMAND_INPUT = """
+{demand}
+"""
+
+DEMAND_SECTION = """
+## AI 수요 실물 증명 스코어보드
+(순환출자 우려의 핵심 반증은 'AI 수요가 가공이 아니라 실물'이라는 증거다.
+ 위 '실물 증명 헤드라인'을 근거로:
+ - 매출·수익화: AI가 기여한 매출·수익화가 구체 수치로 확인됐나, 아직 정성적 설명인가
+ - 생산성·비용절감: 도입 기업의 실제 효과 사례가 나왔나
+ - capex ROI·자금원: 투자가 이익·현금흐름 범위 안인가, 부채 조달로 넘어갔나
+ - 판정: 오늘까지의 증거는 '실물 수요 확인 쪽' / '아직 불충분' / '순환 구조 의심 강화'
+   중 무엇에 가까운지 한 줄. 근거 없이 단정하지 말고 증거의 무게로 판단할 것.
  헤드라인에 없는 수치는 지어내지 말 것. 관련 보도가 없으면 이 섹션은 생략합니다.)
 """
 
@@ -185,6 +204,15 @@ def analyze_market(date: str, market_data: str, thesis: str = "") -> str:
     credit_block = CREDIT_INPUT.format(credit=credit) if credit else ""
     credit_section = CREDIT_SECTION if credit else ""
 
+    # AI 수요 실물 증명(매출·생산성·ROI) — 순환출자 우려의 반증 데이터.
+    try:
+        demand = earnings.demand_proof_markdown()
+    except Exception as e:
+        print(f"  ⚠️ 실물 증명 수집 실패 (건너뜀): {e}")
+        demand = ""
+    demand_block = DEMAND_INPUT.format(demand=demand) if demand else ""
+    demand_section = DEMAND_SECTION if demand else ""
+
     user = USER_TEMPLATE.format(
         date=date,
         market_data=market_data,
@@ -196,6 +224,8 @@ def analyze_market(date: str, market_data: str, thesis: str = "") -> str:
         memory_section=memory_section,
         credit_block=credit_block,
         credit_section=credit_section,
+        demand_block=demand_block,
+        demand_section=demand_section,
         thesis_section=thesis_section,
     )
     system = SYSTEM_PROMPT + "\n\n" + sources.prompt_block()

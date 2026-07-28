@@ -54,6 +54,20 @@ CREDIT_WATCH = [
      '(skeptic OR bubble OR unwind OR "sentiment" OR overbought OR oversold)'),
 ]
 
+# AI 수요의 '실물 증명' 워치 — 순환출자 우려의 반대편 근거(thesis 기둥 4).
+# 가공 수요가 아니라 매출·손익·비용절감으로 이어지는지를 추적한다.
+DEMAND_PROOF_WATCH = [
+    ("AI 매출 기여·수익화",
+     '("AI revenue" OR "AI monetization" OR "revenue from AI") '
+     '(earnings OR quarter OR growth)'),
+    ("AI 생산성·비용절감 (도입 효과)",
+     '("AI productivity" OR "cost savings" OR "efficiency gains") '
+     '(enterprise OR company OR adoption OR deployment) AI'),
+    ("AI capex ROI 논쟁",
+     '("AI capex" OR "AI spending") (ROI OR "return on investment" OR '
+     'payback OR justify OR "cash flow")'),
+]
+
 # 반도체 메모리 가격 워치 — DRAM/NAND 현물·고정거래가·HBM. 무료 가격 API가 없어
 # 뉴스 기반으로 '오르는 중/멈춤/꺾임' 방향을 잡는다(TrendForce·DRAMeXchange 등).
 MEMORY_WATCH = [
@@ -158,6 +172,22 @@ def credit_watch_markdown() -> str:
         return ""
     header = ("아래는 신용·자본순환 워치 항목의 최근 헤드라인입니다"
               " (Google News, 최근 7일):")
+    return header + "\n\n" + "\n\n".join(groups)
+
+
+def demand_proof_markdown() -> str:
+    """AI 수요의 실물 증명(매출·생산성·ROI) 헤드라인 블록. 보도 0건이면 빈 문자열."""
+    groups = []
+    for label, query in DEMAND_PROOF_WATCH:
+        items = _news_rss(query, when="14d")[:_MAX_PER_WATCH]
+        if not items:
+            continue
+        groups.append(_render_group(label, items))
+        print(f"  🧾 실물 증명 {label}: {len(items)}건")
+    if not groups:
+        return ""
+    header = ("아래는 'AI 수요가 실물인가'(매출 기여·생산성·capex ROI)에 대한"
+              " 최근 헤드라인입니다 (Google News, 최근 14일):")
     return header + "\n\n" + "\n\n".join(groups)
 
 
