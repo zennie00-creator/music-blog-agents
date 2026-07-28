@@ -146,6 +146,10 @@ def ask_grok(system: str, user: str, live_search: bool = True,
         except requests.HTTPError as e:
             # chat/completions가 410(Gone)이면 엔드포인트 은퇴 가능성 → responses 시도
             if e.response is not None and e.response.status_code == 410:
+                # 410의 실제 사유는 응답 본문에만 있다(raise_for_status는 버림).
+                # 계정/모델/엔드포인트 중 무엇이 문제인지 한 번은 보여준다.
+                body = (e.response.text or "")[:200].replace("\n", " ")
+                print(f"  🔻 xAI 410 ({model} chat/completions): {body}")
                 return _post_responses(model, search_params)
             raise
 

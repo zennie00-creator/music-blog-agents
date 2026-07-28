@@ -34,8 +34,8 @@ NAME_MAP = {
     "COIN": "Coinbase",
 }
 
-# 실적이 없는 상품(ETF·SPAC 등) — 워치리스트에 있어도 '어닝' 대상에선 제외.
-NO_EARNINGS = {"IBIT", "SPCX"}
+# 실적이 없는 상품(ETF·SPAC·원자재 등) — 워치리스트에 있어도 '어닝' 대상에선 제외.
+NO_EARNINGS = {"IBIT", "SPCX", "USO", "BTCUSD"}
 
 # 지수·금리·환율 심볼에 공통으로 들어가는 토큰 — 개별 종목이 아니므로 제외.
 _NON_EQUITY_TOKENS = ("INDEX", "CURRENCY", "KOSPI", "KRW")
@@ -48,6 +48,31 @@ CREDIT_WATCH = [
     ("AI 자본순환(순환투자)",
      'Nvidia ("circular financing" OR "circular deal" OR "vendor financing") '
      'OR "AI capex bubble" OR (OpenAI Nvidia investment)'),
+    ("AI 투심·회의론 코멘트",
+     '("AI trade" OR "AI stocks" OR semiconductor) '
+     '(analyst OR investor OR strategist OR "hedge fund") '
+     '(skeptic OR bubble OR unwind OR "sentiment" OR overbought OR oversold)'),
+]
+
+# AI 수요의 '실물 증명' 워치 — 순환출자 우려의 반대편 근거(thesis 기둥 4).
+# 증명 사다리(Proof Ladder)를 따라 단계별로 본다: 증명은 공급측(L0)이 아니라
+# 수요측에서, 빠른 채택층(L1) → 느린 채택층(L2) 순서로 온다.
+DEMAND_PROOF_WATCH = [
+    ("[L1 빠른 채택] SaaS·소프트웨어 AI 수익화",
+     '(SaaS OR software) ("AI revenue" OR "AI monetization" OR "AI adoption") '
+     '(earnings OR growth OR margin)'),
+    ("[L1 함정] seat 과금 역풍·가격모델 변화",
+     'SaaS ("seat-based" OR "per-seat" OR headcount OR ARPU OR "pricing model") '
+     'AI (pressure OR shift OR decline OR "consumption-based")'),
+    ("[L1 빠른 채택] 전문서비스 (법률·회계·디자인·음악)",
+     'AI (legal OR accounting OR "law firm" OR design OR music) '
+     '(productivity OR "cost savings" OR revenue OR disruption)'),
+    ("[L2 느린 채택] 제조·복잡 프로세스 도입",
+     'AI (manufacturing OR industrial OR "supply chain" OR logistics) '
+     '(deployment OR ontology OR Palantir OR "digital twin") (results OR ROI)'),
+    ("[L0 공급측] capex ROI·자금원 논쟁",
+     '("AI capex" OR "AI spending") (ROI OR "return on investment" OR '
+     'payback OR justify OR "cash flow" OR debt)'),
 ]
 
 # 반도체 메모리 가격 워치 — DRAM/NAND 현물·고정거래가·HBM. 무료 가격 API가 없어
@@ -154,6 +179,23 @@ def credit_watch_markdown() -> str:
         return ""
     header = ("아래는 신용·자본순환 워치 항목의 최근 헤드라인입니다"
               " (Google News, 최근 7일):")
+    return header + "\n\n" + "\n\n".join(groups)
+
+
+def demand_proof_markdown() -> str:
+    """AI 수요의 실물 증명(매출·생산성·ROI) 헤드라인 블록. 보도 0건이면 빈 문자열."""
+    groups = []
+    for label, query in DEMAND_PROOF_WATCH:
+        items = _news_rss(query, when="14d")[:_MAX_PER_WATCH]
+        if not items:
+            continue
+        groups.append(_render_group(label, items))
+        print(f"  🧾 실물 증명 {label}: {len(items)}건")
+    if not groups:
+        return ""
+    header = ("아래는 'AI 수요가 실물인가'를 증명 사다리 단계별로 모은 최근"
+              " 헤드라인입니다 (L0 공급측 / L1 빠른 채택층 / L2 느린 채택층,"
+              " Google News, 최근 14일):")
     return header + "\n\n" + "\n\n".join(groups)
 
 
