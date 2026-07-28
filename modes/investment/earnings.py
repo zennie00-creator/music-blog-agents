@@ -61,6 +61,9 @@ DEMAND_PROOF_WATCH = [
     ("[L1 빠른 채택] SaaS·소프트웨어 AI 수익화",
      '(SaaS OR software) ("AI revenue" OR "AI monetization" OR "AI adoption") '
      '(earnings OR growth OR margin)'),
+    ("[L1 함정] seat 과금 역풍·가격모델 변화",
+     'SaaS ("seat-based" OR "per-seat" OR headcount OR ARPU OR "pricing model") '
+     'AI (pressure OR shift OR decline OR "consumption-based")'),
     ("[L1 빠른 채택] 전문서비스 (법률·회계·디자인·음악)",
      'AI (legal OR accounting OR "law firm" OR design OR music) '
      '(productivity OR "cost savings" OR revenue OR disruption)'),
