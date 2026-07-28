@@ -40,10 +40,14 @@ NO_EARNINGS = {"IBIT", "SPCX"}
 # 지수·금리·환율 심볼에 공통으로 들어가는 토큰 — 개별 종목이 아니므로 제외.
 _NON_EQUITY_TOKENS = ("INDEX", "CURRENCY", "KOSPI", "KRW")
 
-# 신용·유동성 워치 — (표시 라벨, Google News 검색어). 실적과 별개로 추적.
+# 신용·자본순환 워치 — (표시 라벨, Google News 검색어). 실적과 별개로 추적.
+# 오라클 CDS + 'AI 순환투자(엔비디아→고객사→엔비디아 매출)' 내러티브를 함께 본다.
 CREDIT_WATCH = [
     ("오라클(Oracle) 신용·CDS",
      'Oracle ("credit default swap" OR CDS OR "credit spread" OR bond OR debt OR capex)'),
+    ("AI 자본순환(순환투자)",
+     'Nvidia ("circular financing" OR "circular deal" OR "vendor financing") '
+     'OR "AI capex bubble" OR (OpenAI Nvidia investment)'),
 ]
 
 # 반도체 메모리 가격 워치 — DRAM/NAND 현물·고정거래가·HBM. 무료 가격 API가 없어
@@ -148,7 +152,7 @@ def credit_watch_markdown() -> str:
         print(f"  🏦 신용 워치 {label}: {len(items)}건")
     if not groups:
         return ""
-    header = ("아래는 신용·유동성 워치 항목의 최근 헤드라인입니다"
+    header = ("아래는 신용·자본순환 워치 항목의 최근 헤드라인입니다"
               " (Google News, 최근 7일):")
     return header + "\n\n" + "\n\n".join(groups)
 

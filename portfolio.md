@@ -27,6 +27,9 @@ gsheet/KRX:KOSPI: 코스피
 ## 변동성
 gsheet/INDEXCBOE:VIX: VIX
 
+## 에너지 (매크로)
+gsheet/NYSEARCA:USO: WTI 원유(USO)
+
 ## 섹터
 gsheet/INDEXNASDAQ:SOX: 필라델피아 반도체
 
@@ -36,6 +39,12 @@ gsheet/NASDAQ:MU: 마이크론 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:SKHY: SK하이닉스 ADR @gsheet/INDEXNASDAQ:SOX
 naver/000660: SK하이닉스 (본주) @gsheet/KRX:KOSPI
 gsheet/NYSE:COHR: 코히런트 @gsheet/INDEXNASDAQ:SOX
+
+## 반도체 장비 (브레드스)
+gsheet/NASDAQ:ASML: ASML @gsheet/INDEXNASDAQ:SOX
+gsheet/NASDAQ:AMAT: 어플라이드 머티어리얼즈 @gsheet/INDEXNASDAQ:SOX
+gsheet/NASDAQ:LRCX: 램리서치 @gsheet/INDEXNASDAQ:SOX
+gsheet/NASDAQ:KLAC: KLA @gsheet/INDEXNASDAQ:SOX
 
 ## 환율
 gsheet/CURRENCY:USDKRW: 원/달러
@@ -50,6 +59,7 @@ gsheet/NYSE:JOBY: 조비 에비에이션
 gsheet/NASDAQ:MSTR: 마이크로스트래티지
 gsheet/NASDAQ:COIN: 코인베이스
 gsheet/NASDAQ:IBIT: 비트코인 ETF(IBIT)
+gsheet/CURRENCY:BTCUSD: 비트코인(BTC)
 gsheet/NASDAQ:SPCX: SPCX
 
 # 채권(위 gsheet/INDEXCBOE:*)은 시트에 이 줄들을 추가해야 값이 들어온다:
