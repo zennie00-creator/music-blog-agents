@@ -26,7 +26,9 @@ CONFIG = {
 
 
 def _implied_series(main, adr, fx):
-    """공통 거래일별 (날짜, ADR원화환산/본주) = k×(1+프리미엄) 시계열."""
+    """공통 거래일별 (날짜, ADR원화환산/본주, 본주, ADR, 환율) 시계열.
+    첫 값 = k×(1+프리미엄). 본주·ADR·환율을 같은 날짜로 묶어 반환한다
+    (본주·ADR 기준일이 어긋나도 항상 '같은 날' 괴리를 비교하도록)."""
     md = {r["date"]: r["close"] for r in main}
     fd = {r["date"]: r["close"] for r in fx}
     out = []
@@ -34,7 +36,7 @@ def _implied_series(main, adr, fx):
         d, ap = r["date"], r["close"]
         m, x = md.get(d), fd.get(d)
         if m and x:
-            out.append((d, ap * x / m))
+            out.append((d, ap * x / m, m, ap, x))
     return out
 
 
@@ -67,19 +69,32 @@ def run(ctx):
         lines.append("- (본주·ADR·환율 공통 거래일 없음 — 이력 누적/백필 대기)")
         return "\n".join(lines)
 
-    vals = [v for _, v in series]
+    vals = [t[1] for t in series]
     k = CONFIG["ratio"] or statistics.median(vals)  # 구조적 비율 (고정 or 자동)
     if not k:
         lines.append("- (비율 추정 불가)")
         return "\n".join(lines)
 
-    prem_series = [(d, (v / k - 1) * 100) for d, v in series]  # 공식 비율 대비 프리미엄%
+    prem_series = [(t[0], (t[1] / k - 1) * 100) for t in series]  # 공식 비율 대비 프리미엄%
     prem = prem_series[-1][1]
-    mp, ap, rate = main[-1]["close"], adr[-1]["close"], fx[-1]["close"]
+    # 표시는 '같은 공통 기준일' 값으로 통일 — 본주/ADR 기준일이 어긋나 숫자가
+    # 안 맞아 보이는 문제를 막는다 (프리미엄도 이 날짜 기준으로 검산됨).
+    d_common, _, mp, ap, rate = series[-1]
+    adr_krw = ap * rate
+    parity = mp * k  # ADR 1주의 본주 패리티(원). ADR 원화환산이 이보다 높으면 프리미엄.
 
     ratio_txt = "공식 1:10" if CONFIG["ratio"] == 0.1 else f"{k:.3f}주/ADR"
-    lines.append(f"- 오늘: 본주 {mp:,.0f}원 / ADR ${ap:,.2f} × {rate:,.0f} = {ap*rate:,.0f}원 환산 "
-                 f"(비율 {ratio_txt})")
+    lines.append(f"- 공통 기준일 {d_common}: 본주 {mp:,.0f}원 · ADR ${ap:,.2f} × {rate:,.0f} "
+                 f"= {adr_krw:,.0f}원")
+    lines.append(f"- {ratio_txt} 패리티(ADR 1주=본주×{k}) {parity:,.0f}원 대비 → "
+                 f"ADR **{prem:+.1f}%** 프리미엄")
+
+    # 본주에 공통일보다 최신 데이터가 있으면 (ADR 미갱신) '지금 기준'과의 시차를 알린다.
+    if main[-1]["date"] > d_common:
+        m_last = main[-1]
+        chg = (m_last["close"] / mp - 1) * 100 if mp else 0.0
+        lines.append(f"  ℹ️ 본주 최신 {m_last['date']} {m_last['close']:,.0f}원({chg:+.1f}%)은 "
+                     f"ADR({d_common}) 미반영 — 다음 ADR 갱신 때 괴리 재조정 예상")
 
     prems = [p for _, p in prem_series[-60:]]
     n = len(prems)

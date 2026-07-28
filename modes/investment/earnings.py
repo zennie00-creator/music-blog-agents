@@ -34,8 +34,8 @@ NAME_MAP = {
     "COIN": "Coinbase",
 }
 
-# 실적이 없는 상품(ETF·SPAC 등) — 워치리스트에 있어도 '어닝' 대상에선 제외.
-NO_EARNINGS = {"IBIT", "SPCX"}
+# 실적이 없는 상품(ETF·SPAC·원자재 등) — 워치리스트에 있어도 '어닝' 대상에선 제외.
+NO_EARNINGS = {"IBIT", "SPCX", "USO", "BTCUSD"}
 
 # 지수·금리·환율 심볼에 공통으로 들어가는 토큰 — 개별 종목이 아니므로 제외.
 _NON_EQUITY_TOKENS = ("INDEX", "CURRENCY", "KOSPI", "KRW")
