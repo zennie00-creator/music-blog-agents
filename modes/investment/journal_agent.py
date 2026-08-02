@@ -42,6 +42,10 @@ SYSTEM_PROMPT = """당신은 개인 투자자의 투자 일지를 대신 정리�
   계획(재매수 대기, 비중 축소 등)과 실제 매매가 일치했는지, 신호가 떴는데
   행동하지 않은 건 없는지. 갭이 있으면 '나의 생각' 섹션에서 한 번 짚으세요.
   매매가 계획과 일치했다면 굳이 언급하지 않아도 됩니다.
+- 오늘의 삼자 토론이 주어지면, 그 결론을 일지의 중심 재료로 쓰세요. 토론에서
+  합의된 것과 이견이 남은 것을 구분하고, 투자자 본인의 발언은 메모와 같은 무게로
+  존중하세요. 토론 중 나온 판단이 데이터·신호와 어긋나면 그 긴장을 짚으세요.
+  토론이 없으면 관련 섹션은 생략합니다.
 - 결과물은 마크다운만 출력하세요 (설명·머리말 없이)."""
 
 USER_TEMPLATE = """오늘 날짜: {date}
@@ -54,7 +58,7 @@ USER_TEMPLATE = """오늘 날짜: {date}
 
 [3] 내 메모
 {memo}
-{trades_block}
+{trades_block}{discussion_block}
 
 위 재료로 오늘의 투자 일지를 작성해 주세요.
 
@@ -72,8 +76,14 @@ USER_TEMPLATE = """오늘 날짜: {date}
 ## 테크 & AI
 (브리핑의 테크 동향 중 내 관심사와 닿는 것 위주로 정리)
 
+## 오늘의 토론에서
+(삼자 토론이 있었으면: 합의된 것 / 이견이 남은 것 / 내 판단이 바뀐 지점을 불릿 2~4개로.
+ 토론에서 나온 '프로그램 반영 후보'(전제·워치리스트·신호 수정)가 있으면 한 줄 덧붙일 것.
+ 토론이 없었으면 이 섹션은 통째로 생략)
+
 ## 나의 생각
-(내 메모를 다듬어 서술. 메모가 짧으면 시장 맥락과 연결해 확장하되, 없는 의견을 지어내지 말 것)
+(내 메모를 다듬어 서술. 메모가 짧으면 시장 맥락과 연결해 확장하되, 없는 의견을 지어내지 말 것.
+ 토론이 있었다면 토론에서의 내 발언도 함께 반영)
 
 ## 내일의 체크포인트
 (확인할 지표·이벤트·할 일 불릿 2~4개. 넥라인 등 감시 레벨이 있으면 구체적 수치로)"""
@@ -82,13 +92,18 @@ NO_MEMO_PLACEHOLDER = "(오늘은 별도 메모 없음 — '나의 생각' 섹�
 
 
 def write_journal(date: str, market_data: str, analysis: str, memo: str,
-                  thesis: str = "", trades: str = "") -> str:
+                  thesis: str = "", trades: str = "",
+                  discussion_notes: str = "") -> str:
     thesis_block = ""
     if thesis.strip():
         thesis_block = f"\n[0] 나의 투자 전제 (장기 관점)\n{thesis.strip()}\n"
     trades_block = ""
     if trades.strip():
         trades_block = f"\n[4] 최근 매매 기록 (2주)\n{trades.strip()}\n"
+    discussion_block = ""
+    if discussion_notes.strip():
+        discussion_block = (f"\n[5] 오늘의 삼자 토론 (나·리서치·검토자)\n"
+                            f"{discussion_notes.strip()}\n")
     return ask_claude(
         SYSTEM_PROMPT,
         USER_TEMPLATE.format(
@@ -98,5 +113,6 @@ def write_journal(date: str, market_data: str, analysis: str, memo: str,
             analysis=analysis,
             memo=memo.strip() or NO_MEMO_PLACEHOLDER,
             trades_block=trades_block,
+            discussion_block=discussion_block,
         ),
     )

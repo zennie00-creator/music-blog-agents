@@ -167,9 +167,19 @@ def run(memo: str = "", publish: bool = True, save_local: bool = True) -> dict:
     trades = load_trades()
     if trades:
         print(f"  🧾 최근 매매 기록 반영 ({len(trades.splitlines())}건)")
+    # 오늘 삼자 토론을 했으면 그 결론을 일지에 반영 (브리핑 → 토론 → 일지 흐름)
+    try:
+        from modes.investment import discussion
+        insights = discussion.today_insights(today)
+    except Exception as e:
+        print(f"  ⚠️ 토론 기록 로드 실패 (건너뜀): {e}")
+        insights = ""
+    if insights:
+        print("  🗣️ 오늘의 삼자 토론 반영")
     print("\n✍️ [3/4] Claude - 투자 일지 작성 중...")
     try:
-        journal = write_journal(today, data_md, analysis, memo, thesis=thesis, trades=trades)
+        journal = write_journal(today, data_md, analysis, memo, thesis=thesis,
+                                trades=trades, discussion_notes=insights)
     except Exception as e:
         # Claude 실패 시에도 데이터·신호·분석·메모는 발행 (일지 본문만 대체)
         print(f"  ⚠️ Claude 일지 작성 실패 (데이터·분석만 수록): {e}")

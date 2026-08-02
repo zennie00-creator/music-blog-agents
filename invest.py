@@ -18,6 +18,7 @@
 import argparse
 import sys
 import os
+from datetime import date as _date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -74,12 +75,16 @@ def main():
         return
     if args.discuss:
         topic = args.discuss
+        brief = discussion.load_today_brief()  # 오늘 브리핑을 토론 출발점으로
         if topic == "__latest__":
             topic = discussion.latest_topic()
             if not topic:
-                print("재개할 토론이 없습니다. --discuss \"주제\" 로 새로 시작하세요.")
-                return
-        discussion.discuss(topic, thesis=load_thesis())
+                if not brief:
+                    print("재개할 토론이 없습니다. --discuss \"주제\" 로 새로 시작하세요.")
+                    return
+                topic = f"오늘의 모닝 브리핑 리뷰 ({_date.today().isoformat()})"
+                print(f"재개할 토론이 없어 오늘 브리핑으로 새 토론을 시작합니다: {topic}")
+        discussion.discuss(topic, thesis=load_thesis(), brief=brief)
         return
 
     memo = args.memo
