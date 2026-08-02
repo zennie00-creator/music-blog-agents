@@ -52,8 +52,9 @@ def fetch():
             ratios = _parse(r.json())
             if ratios:
                 return ratios, None
+            last_err = f"{url.rsplit('/', 1)[-1]}: 200이지만 비율 필드 없음"
         except Exception as e:
-            last_err = e
+            last_err = f"{url.rsplit('/', 1)[-1]}: {type(e).__name__} {str(e)[:80]}"
     return {}, last_err
 
 
@@ -71,7 +72,11 @@ def run(ctx):
     ratios, err = fetch()
     lines = [f"### {TITLE}"]
     if not ratios:
-        # 무료 CBOE 소스가 자주 막힌다(403). 브리핑엔 조용히 생략하고 진행.
+        # 무료 CBOE 소스가 자주 막힌다(403). 브리핑엔 조용히 생략하되,
+        # 실패 사유는 실행 로그에 남긴다 — 사유를 버리면 매일 '불가'만 보이고
+        # 차단(403)인지 엔드포인트 폐기(404)인지 영영 알 수 없다.
+        if err:
+            print(f"  🔻 Put/Call 소스 실패 — {err}")
         lines.append("- (옵션 심리 소스 일시 불가 — 오늘은 생략)")
         return "\n".join(lines)
 
