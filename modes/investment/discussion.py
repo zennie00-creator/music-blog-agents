@@ -108,15 +108,29 @@ def _fmt(messages) -> str:
     return "\n\n".join(f"[{s}] {t}" for s, t in messages)
 
 
-def _context(state, thesis: str) -> str:
+def _context(state, thesis: str, brief: str = "") -> str:
     parts = []
     if thesis.strip():
         parts.append(f"[투자자의 장기 전제]\n{thesis.strip()}")
+    if brief.strip():
+        # 오늘 브리핑을 토론의 출발점으로 — 신호·클러스터·뉴스를 이미 공유한 상태에서 시작
+        parts.append(f"[오늘의 모닝 브리핑 — 이 내용을 전제로 토론한다]\n{brief.strip()}")
     if state["summary"]:
         parts.append(f"[지금까지의 토론 요약]\n{state['summary']}")
     if state["messages"]:
         parts.append(f"[최근 발언]\n{_fmt(state['messages'])}")
     return "\n\n".join(parts)
+
+
+def load_today_brief(date: str = "") -> str:
+    """오늘 발행된 모닝 브리핑 본문 (journals/YYYY-MM-DD-brief.md). 없으면 빈 문자열."""
+    from datetime import date as _d
+    date = date or _d.today().isoformat()
+    path = os.path.join(config.ROOT_DIR, "journals", f"{date}-brief.md")
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+    return ""
 
 
 def _maybe_compact(state):
@@ -147,6 +161,52 @@ def _archive(state, summary: str):
 
 # ── 공개 API ────────────────────────────────────────────
 
+def _research(prompt: str):
+    """리서치 발언 담당 — Grok 우선, 불가하면 Claude가 그 역할을 대행.
+
+    Grok이 죽어도(현재 xAI 410) 토론이 멈추지 않게 한다. 대행일 때는 검색이 없으므로
+    '단정 금지'를 명시하고, 발언자 이름도 다르게 남겨 누가 말한 것인지 기록에 남긴다.
+    → (발언자 이름, 답변)"""
+    system = GROK_SYSTEM + "\n\n" + sources.prompt_block()
+    if config.USE_GROK:
+        try:
+            return "Grok", ask_grok(system, prompt, live_search=True,
+                                    x_handles=sources.x_handles())
+        except Exception as e:
+            print(f"  ℹ️ Grok 불가 → Claude가 리서치 역할 대행: {e}")
+    note = ("\n\n[안내] 실시간 검색이 없습니다. 주어진 브리핑·전제·대화 내용만 근거로"
+            " 답하고, 확인되지 않은 최신 사실은 단정하지 마세요.")
+    return "Claude(리서치)", ask_claude(system, prompt + note, max_tokens=2048)
+
+
+def today_insights(date: str = "") -> str:
+    """오늘 진행한 토론의 요약·발언 — 투자 일지에 반영할 재료. 없으면 빈 문자열.
+
+    discussions/*.json 중 오늘 갱신된 것만 모은다."""
+    from datetime import date as _d
+    date = date or _d.today().isoformat()
+    if not os.path.isdir(STATE_DIR):
+        return ""
+    parts = []
+    for name in sorted(os.listdir(STATE_DIR)):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(STATE_DIR, name), encoding="utf-8") as f:
+                st = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not str(st.get("updated", "")).startswith(date):
+            continue  # 오늘 진행한 토론만
+        chunk = [f"[토론 주제] {st.get('topic', name)}"]
+        if st.get("summary"):
+            chunk.append(f"(누적 요약) {st['summary']}")
+        msgs = st.get("messages", [])[-TAIL_KEEP:]
+        chunk += [f"[{s}] {t}" for s, t in msgs]
+        parts.append("\n".join(chunk))
+    return "\n\n".join(parts)
+
+
 def ask_once(question: str, thesis: str = "") -> str:
     """단발 리서치 질문 (--ask). Grok 답변을 insights.md에 기록."""
     answer = ask_grok(GROK_SYSTEM + "\n\n" + sources.prompt_block(), question,
@@ -157,12 +217,17 @@ def ask_once(question: str, thesis: str = "") -> str:
     return answer
 
 
-def discuss(topic: str, thesis: str = ""):
-    """삼자 토론 루프 (--discuss). 이전 상태가 있으면 이어서 진행."""
+def discuss(topic: str, thesis: str = "", brief: str = ""):
+    """삼자 토론 루프 (--discuss). 이전 상태가 있으면 이어서 진행.
+
+    brief를 주면 오늘 모닝 브리핑을 토론의 출발점으로 삼는다 — 신호·클러스터·뉴스를
+    이미 공유한 상태에서 시작하므로 '오늘 시장'을 다시 설명할 필요가 없다."""
     state = _load_state(topic)
     resumed = bool(state["messages"] or state["summary"])
 
     print(f"\n🗣️ 삼자 토론 {'재개' if resumed else '시작'} — 주제: {topic}")
+    if brief:
+        print("   📊 오늘 모닝 브리핑을 토론 컨텍스트로 주입 (신호·클러스터·뉴스 공유됨)")
     if resumed and state["summary"]:
         print(f"\n[지금까지의 요약]\n{state['summary']}\n")
     print("   (매 라운드: 나 → Grok 분석 → Claude 검토. '종료' 입력 시 요약 후 저장)\n")
@@ -174,20 +239,16 @@ def discuss(topic: str, thesis: str = ""):
     while user_input and user_input.lower() not in ("종료", "exit", "quit", "q"):
         state["messages"].append(["나", user_input])
 
-        print("🔍 Grok 분석 중...")
-        grok_answer = ask_grok(
-            GROK_SYSTEM + "\n\n" + sources.prompt_block(),
-            f"{_context(state, thesis)}\n\n마지막 발언에 대해 최신 데이터를 근거로 답하세요.",
-            live_search=True,
-            x_handles=sources.x_handles(),
-        )
-        state["messages"].append(["Grok", grok_answer])
-        print(f"\n[Grok]\n{grok_answer}\n")
+        print("🔍 리서치 분석 중...")
+        researcher, research_answer = _research(
+            f"{_context(state, thesis, brief)}\n\n마지막 발언에 대해 최신 데이터를 근거로 답하세요.")
+        state["messages"].append([researcher, research_answer])
+        print(f"\n[{researcher}]\n{research_answer}\n")
 
         print("🧐 Claude 검토 중...")
         claude_review = ask_claude(
             CLAUDE_SYSTEM,
-            f"{_context(state, thesis)}\n\n위 Grok의 마지막 분석을 검토하세요.",
+            f"{_context(state, thesis, brief)}\n\n위 {researcher}의 마지막 분석을 검토하세요.",
             max_tokens=2048,
         )
         state["messages"].append(["Claude", claude_review])
