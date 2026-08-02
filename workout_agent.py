@@ -116,6 +116,69 @@ def workout_line(w):
     return f"{sport_emoji(w.get('sport'))} {w.get('sport','운동')} · " + " · ".join(parts)
 
 
+# ── 구간 기록(스플릿) ─────────────────────────────────────────────────
+# Whoop API는 구간별 스플릿을 주지 않는다. 트레드밀처럼 본인이 정확히 기억하는
+# 경우 직접 적게 해서, 코치가 워밍업/메인/쿨다운 구조까지 보고 분석하게 한다.
+_SPLIT_TIME = re.compile(r"(\d+(?:\.\d+)?)\s*(?:분|min(?:s|utes)?)", re.I)
+_SPLIT_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*(?:km/?h|kph|kmh)", re.I)
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def parse_splits(text):
+    """'2분 6.1 / 10분 8.6km/h' 같은 자유 입력을 구간 목록으로 파싱한다.
+
+    반환: [{"minutes": float, "speed": float, "km": float}, ...]
+    분/속도 순서가 바뀌어도(6.1km/h 2분) 인식한다. 못 읽은 줄은 조용히 건너뛴다.
+    """
+    out = []
+    # 'km/h'의 슬래시가 구간 구분자로 잘리지 않게 먼저 정규화한다
+    norm = re.sub(r"km\s*/\s*h", "kmh", text or "", flags=re.I)
+    for chunk in re.split(r"[\n,/·;]+", norm):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        t = _SPLIT_TIME.search(chunk)
+        s = _SPLIT_SPEED.search(chunk)
+        minutes = float(t.group(1)) if t else None
+        speed = float(s.group(1)) if s else None
+        if minutes is None or speed is None:
+            # 단위가 하나만 붙은 경우: 남은 숫자를 반대쪽 값으로 본다
+            used = {t.group(1) if t else None, s.group(1) if s else None}
+            rest = [n for n in _NUMBER.findall(chunk) if n not in used]
+            if minutes is None and speed is not None and rest:
+                minutes = float(rest[0])
+            elif speed is None and minutes is not None and rest:
+                speed = float(rest[0])
+            elif minutes is None and speed is None and len(rest) >= 2:
+                # 단위가 전혀 없으면 '분 속도' 순서로 가정
+                minutes, speed = float(rest[0]), float(rest[1])
+        if minutes and speed:
+            out.append({"minutes": round(minutes, 1), "speed": round(speed, 2),
+                        "km": round(speed * minutes / 60, 3)})
+    return out
+
+
+def splits_total_km(splits):
+    return round(sum(s["km"] for s in (splits or [])), 2)
+
+
+def splits_total_min(splits):
+    return round(sum(s["minutes"] for s in (splits or [])), 1)
+
+
+def splits_lines(splits):
+    """구간 기록을 요약·발행용 줄 목록으로."""
+    if not splits:
+        return []
+    lines = ["🏃 구간 기록 (직접 입력 — 정확한 기록)"]
+    for s in splits:
+        lines.append(f"{s['minutes']:g}분 @ {s['speed']:g} km/h "
+                     f"· {s['km']:.2f} km")
+    lines.append(f"합계: {splits_total_min(splits):g}분 · "
+                 f"{splits_total_km(splits):.2f} km")
+    return lines
+
+
 def _distance_text(w):
     """편집된 운동의 거리 표기. distance_source: gps|manual|none."""
     src = w.get("distance_source", "gps")
@@ -154,6 +217,13 @@ def _one_workout_lines(w, idx=None, total=1):
                       for k, v in sorted(zones.items()) if v)
         if z:
             lines.append(f"· 심박존 분포: {z}")
+    # 구간 기록은 본인이 정확히 기억해 적은 값 — 코치가 구조까지 보게 넘긴다
+    sp = w.get("splits")
+    if sp:
+        lines.append("· 구간 기록 (본인이 직접 기록 — 정확함):")
+        for s in sp:
+            lines.append(f"   {s['minutes']:g}분 @ {s['speed']:g} km/h "
+                         f"({s['km']:.2f} km)")
     return lines
 
 
@@ -321,12 +391,23 @@ STYLE_RULES = """[문체 규칙 — 사람이 직접 쓴 일기처럼]
 - 다음 같은 상투적 표현 금지: "값진/소중한 시간", "한 걸음 더 나아가", "몸이 보내는 신호",
   "~하는 나 자신을 발견했다", "여정", "완벽한 마무리", "그렇게 오늘도", "~가 아닐 수 없다".
 - 모든 문단을 교훈이나 다짐으로 끝내지 마세요. 느낌만 적고 끝나는 문단이 있어도 됩니다.
-- 감탄·과장("정말", "너무나", 느낌표)을 남발하지 말고 담백하게. 비유는 글 전체에 많아야 한 번."""
+- 감탄·과장("정말", "너무나", 느낌표)을 남발하지 말고 담백하게. 비유는 글 전체에 많아야 한 번.
+- 내가 메모에 쓰지 않은 사실·추측·해석을 지어내지 마세요. "이건 처음인 듯하다",
+  "회복돼서 다르게 소화됐다" 같은 추정·비교는 내가 직접 적었을 때만 씁니다.
+  없는 인과·판단을 넣지 말고, 데이터에 실제로 있는 것만 담담히 적으세요.
+- 코치가 한 말을 이 글에 옮기지 마세요. "코치한테 들었다", "~라고 했다" 식으로
+  코치 조언을 인용·요약하지 마세요. 코치의 한마디는 이 글과 별개 영역에 따로 실립니다.
+  이 글은 오로지 '내가 한 운동과 내가 느낀 것'만 담습니다."""
 
 
 def write_workout_blog(summary, analysis, before, body, after, profile=None,
                        n_workouts=1):
-    """데이터 + 코치 분석 + 나의 주관적 느낌을 하나의 운동 일지로 엮는다."""
+    """데이터 + 나의 주관적 느낌을 하나의 운동 일지로 엮는다.
+
+    analysis(코치 분석)는 더 이상 본문에 섞지 않는다 — 코치의 한마디는 별도
+    영역에 실리고, 사용자는 일지에 코치 말을 인용하지 않기 때문. (호출부 호환을
+    위해 인자는 유지하되 프롬프트에는 넣지 않는다.)
+    """
     tone = (profile or {}).get("tone", "")
     tone_line = f"원하는 글 톤: {tone} (아래 문체 규칙과 충돌하면 이 톤을 우선)" if tone else ""
     style_mem = ((profile or {}).get("style_memory") or "").strip()
@@ -355,9 +436,6 @@ def write_workout_blog(summary, analysis, before, body, after, profile=None,
 
 [오늘의 운동 데이터]
 {summary}
-
-[코치의 분석 — 내가 코치에게 들은 말. 인상 깊었던 한두 가지만 내 말로 언급]
-{analysis}
 
 [운동 전 내가 적은 메모]
 {before or '(기록 없음)'}

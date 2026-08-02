@@ -256,9 +256,24 @@ def run():
                 if mode == opts[0] and has_gps:
                     st.caption(f"GPS 거리: {round(w['distance_m']/1000, 2)} km")
                 elif mode == opts[1]:
-                    prev_km = w.get("distance_km") or round((w.get("distance_m") or 0) / 1000, 2)
-                    st.number_input("거리 직접 입력 (km)", min_value=0.0, step=0.1,
-                                    value=float(prev_km), key=f"distkm_{i}")
+                    # 구간 기록을 적으면 거리를 자동 계산한다 (적을수록 코치 분석이 깊어짐).
+                    # 위젯 렌더 순서 주의: 구간 → (없을 때만) 거리 입력
+                    splits_txt = st.text_area(
+                        "구간 기록 (선택 · 적으면 코치가 구조까지 분석)",
+                        key=f"splits_{i}",
+                        placeholder="예: 2분 6.1 / 10분 8.6 / 5분 9.2 / 15분 10.1 / 3분 6.1\n"
+                                    "(‘분 속도’ 순, km/h 붙여도 됨. 줄바꿈·쉼표·슬래시로 구분)")
+                    parsed = workout_agent.parse_splits(splits_txt)
+                    if parsed:
+                        st.caption(
+                            f"✅ {len(parsed)}구간 · 합계 "
+                            f"{workout_agent.splits_total_min(parsed):g}분 · "
+                            f"{workout_agent.splits_total_km(parsed):.2f} km "
+                            "— 거리를 자동 계산했어요")
+                    else:
+                        prev_km = w.get("distance_km") or round((w.get("distance_m") or 0) / 1000, 2)
+                        st.number_input("거리 직접 입력 (km)", min_value=0.0, step=0.1,
+                                        value=float(prev_km), key=f"distkm_{i}")
             # 요약 미리보기
             preview = []
             if w.get("strain") is not None:
@@ -302,7 +317,15 @@ def run():
                         e["distance_km"] = round((w.get("distance_m") or 0) / 1000, 2) or None
                     elif mode == opts[1]:
                         e["distance_source"] = "manual"
-                        e["distance_km"] = st.session_state.get(f"distkm_{i}") or None
+                        # 구간 기록이 있으면 그 합으로 거리를 계산(더 정확)
+                        splits = workout_agent.parse_splits(
+                            st.session_state.get(f"splits_{i}", ""))
+                        if splits:
+                            e["splits"] = splits
+                            e["distance_km"] = workout_agent.splits_total_km(splits)
+                        else:
+                            e["splits"] = None
+                            e["distance_km"] = st.session_state.get(f"distkm_{i}") or None
                     else:
                         e["distance_source"] = "none"
                         e["distance_km"] = None
@@ -498,6 +521,10 @@ def _summary_lines(with_zones=True):
             lines.append(f"📊 {stat_line}")
         if with_zones and chosen:
             lines += workout_agent.zone_text_block(chosen[0])
+    # 직접 적은 구간 기록은 붙여넣기 텍스트에도 남긴다 (Notion은 별도 섹션)
+    if with_zones:
+        for w in chosen:
+            lines += workout_agent.splits_lines(w.get("splits"))
     return lines
 
 
@@ -535,6 +562,23 @@ def _zone_table_html(w, title_color="#888"):
 def _naver_zone_html():
     """유산소 운동들의 심박존 체류시간을 네이버 HTML 막대 표로."""
     return "".join(_zone_table_html(w) for w in st.session_state.wk_selected_list)
+
+
+def _splits_sections_for_notion():
+    """Notion용 구간 기록 섹션 — 직접 적은 스플릿이 있는 운동만."""
+    sections = []
+    for w in st.session_state.wk_selected_list:
+        sp = w.get("splits")
+        if not sp:
+            continue
+        heading = (f"{workout_agent.sport_emoji(w.get('sport'))} "
+                   f"{w.get('sport','')} — 구간 기록")
+        lines = [f"{s['minutes']:g}분 @ {s['speed']:g} km/h · {s['km']:.2f} km"
+                 for s in sp]
+        lines.append(f"합계: {workout_agent.splits_total_min(sp):g}분 · "
+                     f"{workout_agent.splits_total_km(sp):.2f} km")
+        sections.append((heading, lines))
+    return sections
 
 
 def _zone_sections_for_notion():
@@ -725,7 +769,8 @@ def _show_output():
                         coach_text=st.session_state.get("wk_analysis", ""),
                         image_ids=image_ids,
                         icon=workout_agent.sport_emoji(first_sport),
-                        data_sections=_zone_sections_for_notion())
+                        data_sections=(_splits_sections_for_notion()
+                                       + _zone_sections_for_notion()))
                     st.session_state.wk_notion_url = url
                     st.rerun()
                 except Exception as e:
