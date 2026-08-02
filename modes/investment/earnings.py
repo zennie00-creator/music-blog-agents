@@ -48,6 +48,9 @@ CREDIT_WATCH = [
     ("AI 자본순환(순환투자)",
      'Nvidia ("circular financing" OR "circular deal" OR "vendor financing") '
      'OR "AI capex bubble" OR (OpenAI Nvidia investment)'),
+    ("유동성 국면 (초과 유동성·M2·QT)",
+     '("excess liquidity" OR "money supply" OR M2 OR "balance sheet runoff" OR QT) '
+     '(Fed OR "central bank" OR global) (equities OR "risk assets" OR semiconductor)'),
     ("AI 투심·회의론 코멘트",
      '("AI trade" OR "AI stocks" OR semiconductor) '
      '(analyst OR investor OR strategist OR "hedge fund") '

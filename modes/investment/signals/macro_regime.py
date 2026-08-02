@@ -11,6 +11,7 @@ from datetime import date
 SPX = "gsheet/INDEXSP:.INX"
 TNX = "gsheet/INDEXCBOE:TNX"
 USO = "gsheet/NYSEARCA:USO"
+SOX = "gsheet/INDEXNASDAQ:SOX"
 
 TITLE = "매크로 국면 보드 (헤드윈드 점검)"
 
@@ -77,6 +78,45 @@ def _yield_level(ctx):
     return cur, hi, cur >= hi * 0.97
 
 
+def _sox_yoy(ctx):
+    """SOX 전년 대비(%) — 초과 유동성 선행지표가 예측한다는 '결과 변수'.
+    유동성 게이지 자체(G10)는 유료 데이터라 못 받지만, 그 대상인 SOX YoY는
+    우리 이력으로 직접 계산해 국면(둔화/가속)을 추적할 수 있다."""
+    rows = [r for r in ctx["histories"].get(SOX, []) if r.get("close")]
+    if len(rows) < 200:
+        return None
+
+    def _yoy_at(idx):
+        """rows[idx] 시점의 전년 대비(%) — 1년 전 근처(±20일) 값이 있어야 계산."""
+        cur = rows[idx]
+        target = f"{int(cur['date'][:4]) - 1}{cur['date'][4:]}"
+        prior = min(rows, key=lambda r: _date_gap(r["date"], target))
+        if _date_gap(prior["date"], target) > 20 or not prior["close"]:
+            return None
+        return (cur["close"] / prior["close"] - 1) * 100
+
+    yoy = _yoy_at(-1)
+    if yoy is None:
+        return None
+    # 약 3개월 전 시점의 YoY와 비교해 가속/둔화 방향을 본다
+    prev = _yoy_at(-63) if len(rows) > 63 else None
+    trend = ""
+    if prev is not None:
+        trend = " 둔화 중" if yoy < prev else " 가속 중"
+    return yoy, trend
+
+
+def _date_gap(a, b):
+    """YYYY-MM-DD 두 날짜의 대략적 일수 차이 (절대값)."""
+    try:
+        from datetime import date as _d
+        da = _d.fromisoformat(a)
+        db = _d.fromisoformat(b)
+        return abs((da - db).days)
+    except ValueError:
+        return 10 ** 6
+
+
 def _seasonality(ctx):
     """현재 '달'의 역사적 월간(MoM) 평균 수익률 — 우리 S&P 이력 기준(표본 작음)."""
     rows = ctx["histories"].get(SPX, [])
@@ -126,5 +166,12 @@ def run(ctx):
     if en is not None:
         flag = " 🚩 급등(인플레·금리 상방)" if en >= ENERGY_SURGE_PCT else ""
         lines.append(f"- 에너지(WTI/USO) {ENERGY_WINDOW}거래일: {en:+.1f}%{flag}")
+
+    sox = _sox_yoy(ctx)
+    if sox:
+        yoy, trend = sox
+        # 초과 유동성 선행지표가 예측 대상으로 삼는 변수 — 유동성 국면 판단의 결과 지표
+        lines.append(f"- 반도체(SOX) 전년 대비: {yoy:+.1f}%{trend} "
+                     "(초과 유동성 선행지표의 대상 변수 — 유동성 역풍 가설의 검증점)")
 
     return "\n".join(lines) if len(lines) > 1 else None
