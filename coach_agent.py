@@ -9,6 +9,11 @@
 대화다. distill_framework()로 그 대화를 '한 번만' 구조화해 노트로 삼으면,
 이후로는 평소 일지 흐름만으로 코치가 이어서 발전시킨다. 노트의 주간 리듬은
 고정 시간표가 아니라 유동적 기본값으로, 코치가 실제 일정에 맞춰 조정한다.
+
+증류는 필연적으로 손실이 있다 — 긴 분석이 불릿 몇 줄로 눌리면서 뉘앙스와
+유보 조건이 날아간다. 그래서 주기적으로 받는 다른 코치의 분석은 노트에
+병합하지 않고 '코치 인사이트 로그'에 날짜별 **원문 그대로** 쌓아 두고,
+코치가 분석할 때 최신 원문을 직접 읽는다 (format_insights).
 """
 from core import writer
 
@@ -99,6 +104,50 @@ def _log_block(coach_log):
 """
 
 
+def _insight_block(insights):
+    if not (insights or "").strip():
+        return ""
+    return f"""
+[다른 코치의 분석 원문 — 요약본이 아니라 그대로]
+{insights.strip()}
+
+원문 사용 규칙:
+- 위 훈련 노트는 이 원문들을 압축한 것이라 뉘앙스가 빠져 있다. 노트와 원문이
+  엇갈리면 **날짜가 최신인 원문**을 우선하고, 원문의 결(강조점·표현·유보 조건)을
+  살려서 읽어라.
+- 원문에 있는 수치·처방을 그대로 베껴 옮기지 말고, 오늘 세션과 이어서 해석하라.
+- 원문은 다른 코치의 것이다. 동의하면 짧게 언급만 하고, 견해가 다르면
+  근거를 들어 네 판단을 말하라.
+"""
+
+
+# 분석 프롬프트에 넣을 원문 편수. 원문은 길어서 최신 몇 편만 넣는다.
+INSIGHT_PROMPT_LIMIT = 2
+
+
+def format_insights(items, limit=INSIGHT_PROMPT_LIMIT, chars=2500):
+    """인사이트 로그(최신순 dict 목록)를 프롬프트용 텍스트로. (LLM 비용 없음)
+
+    각 항목: {date, source, text}. 원문을 남기는 게 목적이라 요약하지 않고,
+    대신 **최신 limit편만** 넣고 편당 chars자로 잘라 토큰을 지킨다.
+    오래된 것이 위로 오도록(시간 순) 정렬해 흐름이 읽히게 한다.
+    """
+    if not items:
+        return ""
+    out = []
+    for e in reversed(items[:limit]):  # 오래된 것 → 최신 순
+        text = (e.get("text") or "").strip()
+        if not text:
+            continue
+        date = e.get("date", "")
+        source = (e.get("source") or "").strip()
+        head = f"── {date} · {source} ──" if source else f"── {date} ──"
+        if len(text) > chars:
+            text = text[:chars].rstrip() + "\n…(이하 생략)"
+        out.append(f"{head}\n{text}")
+    return "\n\n".join(out)
+
+
 def _note_block(user_note, whoop_note):
     out = ""
     if (user_note or "").strip():
@@ -134,7 +183,8 @@ def _goal_block(profile):
 
 
 def build_analysis_prompt(summary, profile=None, framework="", trend="",
-                          coach_log="", user_note="", whoop_note=""):
+                          coach_log="", user_note="", whoop_note="",
+                          insights=""):
     """분석 프롬프트를 조립한다 (테스트·재사용을 위해 순수 함수로 분리)."""
     return f"""{COACH_PERSONA}
 
@@ -144,7 +194,7 @@ def build_analysis_prompt(summary, profile=None, framework="", trend="",
 {summary}
 
 {_DATA_CAVEAT}
-{_framework_block(framework)}{_trend_block(trend)}{_log_block(coach_log)}{_note_block(user_note, whoop_note)}
+{_framework_block(framework)}{_insight_block(insights)}{_trend_block(trend)}{_log_block(coach_log)}{_note_block(user_note, whoop_note)}
 {_goal_block(profile)}
 
 아래를 담되, 소제목·번호 없이 자연스러운 문단으로, 짧고 밀도 높게 쓰세요:
@@ -159,10 +209,14 @@ def build_analysis_prompt(summary, profile=None, framework="", trend="",
 
 
 def analyze(summary, profile=None, framework="", trend="", coach_log="",
-            user_note="", whoop_note=""):
-    """오늘 운동을 전문가 코치 관점으로 해석한다 (강한 모델)."""
+            user_note="", whoop_note="", insights=""):
+    """오늘 운동을 전문가 코치 관점으로 해석한다 (강한 모델).
+
+    insights : 다른 코치가 준 분석의 **원문** (format_insights). 훈련 노트가
+               증류 과정에서 잃은 뉘앙스를 코치가 직접 읽게 하는 통로다.
+    """
     prompt = build_analysis_prompt(summary, profile, framework, trend,
-                                    coach_log, user_note, whoop_note)
+                                    coach_log, user_note, whoop_note, insights)
     # 상한을 낮게 둬 장황함에 제동을 건다(비용도 절약). 2~4문단엔 충분.
     return writer.generate(prompt, model=COACH_MODEL, max_tokens=1400)
 

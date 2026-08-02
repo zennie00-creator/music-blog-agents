@@ -336,55 +336,66 @@ def save_settings(data):
         return False
 
 
-# ── 시계열 코치 로그 (날짜별 코치 대화 축적) ─────────────────────────
-# 운동 일지를 완성할 때마다 그날의 (요약·코치 분석·내 답장)을 한 페이지의
-# 코드 블록에 JSON 배열로 append 한다. 다음 일지 분석 때 최근 며칠치를 불러와
-# "지난번에 이렇게 얘기했었죠" 식으로 이어지는 코칭을 만든다. (설정 저장과
+# ── 날짜별 코치 기록 저장소 ──────────────────────────────────────────
+# 코치가 시간을 두고 참고하는 기록을 두 종류 보관한다. 둘 다 같은 방식이다 —
+# 페이지 하나의 코드 블록에 JSON 배열을 넣고 통째로 갈아끼운다. (설정 저장과
 # 같은 방식 — 검색·파싱이 안정적이고 토큰이 거의 안 든다.)
+#
+#  - "운동 코치 로그": 일지를 완성할 때마다 그날의 (요약·코치 분석·내 답장).
+#    다음 분석 때 "지난번에 이렇게 얘기했었죠" 식으로 대화가 이어진다.
+#  - "코치 인사이트 로그": 다른 코치(Whoop 등)가 주기적으로 준 .md를 날짜별
+#    **원문 그대로**. 훈련 노트로 증류해 병합하면 불릿으로 눌리면서 뉘앙스가
+#    뭉개지므로, 원문을 따로 남겨 코치가 직접 읽게 한다.
 
 COACHLOG_TITLE = "운동 코치 로그"
-_coachlog_loc = None  # (page_id, code_block_id) 캐시
+INSIGHT_TITLE = "코치 인사이트 로그"
+
+_STORES = {
+    COACHLOG_TITLE: (
+        "NOTION_COACHLOG_PARENT_ID", "🧑‍🏫",
+        "운동 코치가 날짜별 대화(요약·분석·답장)를 이어가려고 "
+        "보관하는 페이지입니다. 삭제하면 코칭 연속성이 초기화됩니다."),
+    INSIGHT_TITLE: (
+        "NOTION_INSIGHT_PARENT_ID", "📚",
+        "다른 코치(Whoop 등)가 준 분석을 날짜별 원문 그대로 보관하는 "
+        "페이지입니다. 우리 코치가 요약본이 아니라 이 원문을 읽습니다."),
+}
+
+_store_loc = {}  # title -> (page_id, code_block_id) 캐시
 
 
-def _coachlog_parent():
-    """코치 로그를 쌓을 부모 ID. 전용 환경변수 우선, 없으면 일반 발행 위치."""
-    return ((os.environ.get("NOTION_COACHLOG_PARENT_ID") or "").strip()
-            or _parent_id())
-
-
-def _find_coachlog():
-    """코치 로그 페이지의 (page_id, code_block_id). 없으면 (None, None)."""
-    global _coachlog_loc
-    if _coachlog_loc:
-        return _coachlog_loc
+def _find_store(title):
+    """기록 페이지의 (page_id, code_block_id). 없으면 (None, None)."""
+    if title in _store_loc:
+        return _store_loc[title]
     r = requests.post(f"{API}/search", headers=_headers(),
-                      json={"query": COACHLOG_TITLE,
+                      json={"query": title,
                             "filter": {"value": "page", "property": "object"},
                             "page_size": 20}, timeout=20)
     if r.status_code >= 300:
         return (None, None)
     for res in r.json().get("results", []):
-        title = ""
+        found = ""
         for p in (res.get("properties") or {}).values():
             if p.get("type") == "title":
-                title = "".join(t.get("plain_text", "") for t in p.get("title", []))
-        if title.strip() != COACHLOG_TITLE:
+                found = "".join(t.get("plain_text", "") for t in p.get("title", []))
+        if found.strip() != title:
             continue
         rb = requests.get(f"{API}/blocks/{res['id']}/children?page_size=50",
                           headers=_headers(), timeout=20)
         for b in rb.json().get("results", []):
             if b.get("type") == "code":
-                _coachlog_loc = (res["id"], b["id"])
-                return _coachlog_loc
+                _store_loc[title] = (res["id"], b["id"])
+                return _store_loc[title]
     return (None, None)
 
 
-def load_coach_logs():
-    """저장된 코치 로그(최신순 dict 목록)를 반환. 없거나 실패하면 []."""
+def _load_store(title):
+    """저장된 기록(최신순 dict 목록)을 반환. 없거나 실패하면 []."""
     if not has_settings_credentials():
         return []
     try:
-        _page_id, code_id = _find_coachlog()
+        _page_id, code_id = _find_store(title)
         if not code_id:
             return []
         r = requests.get(f"{API}/blocks/{code_id}", headers=_headers(), timeout=20)
@@ -398,45 +409,50 @@ def load_coach_logs():
         return []
 
 
-def _write_coachlog(logs):
-    """코치 로그 배열을 코드 블록에 저장(없으면 페이지 생성). 성공하면 True."""
-    payload = json.dumps(logs, ensure_ascii=False, indent=2)
-    _page_id, code_id = _find_coachlog()
+def _write_store(title, items):
+    """기록 배열을 코드 블록에 저장(없으면 페이지 생성). 성공하면 True."""
+    payload = json.dumps(items, ensure_ascii=False, indent=2)
+    _page_id, code_id = _find_store(title)
     if code_id:
         r = requests.patch(f"{API}/blocks/{code_id}", headers=_headers(),
                            json={"code": {"rich_text": _rich_long(payload)}},
                            timeout=20)
         return r.status_code < 300
-    pid = _coachlog_parent()
+    env_key, icon, intro = _STORES[title]
+    # 전용 환경변수 우선, 없으면 일반 발행 위치
+    pid = (os.environ.get(env_key) or "").strip() or _parent_id()
     if not pid:
         return False
     kind, title_prop = _resolve_parent(pid)
     children = [
-        _paragraph("운동 코치가 날짜별 대화(요약·분석·답장)를 이어가려고 "
-                   "보관하는 페이지입니다. 삭제하면 코칭 연속성이 초기화됩니다."),
+        _paragraph(intro),
         {"object": "block", "type": "code",
          "code": {"rich_text": _rich_long(payload), "language": "json"}},
     ]
     if kind == "database":
         body = {"parent": {"database_id": pid},
-                "properties": {title_prop: {"title": _rich(COACHLOG_TITLE)}}}
+                "properties": {title_prop: {"title": _rich(title)}}}
     else:
         body = {"parent": {"page_id": pid},
-                "properties": {"title": {"title": _rich(COACHLOG_TITLE)}}}
+                "properties": {"title": {"title": _rich(title)}}}
     body["children"] = children
-    body["icon"] = {"type": "emoji", "emoji": "🧑‍🏫"}
+    body["icon"] = {"type": "emoji", "emoji": icon}
     r = requests.post(f"{API}/pages", headers=_headers(), json=body, timeout=30)
     if r.status_code >= 300:
         return False
     new_id = r.json().get("id")
     rb = requests.get(f"{API}/blocks/{new_id}/children?page_size=20",
                       headers=_headers(), timeout=20)
-    global _coachlog_loc
     for b in rb.json().get("results", []):
         if b.get("type") == "code":
-            _coachlog_loc = (new_id, b["id"])
+            _store_loc[title] = (new_id, b["id"])
             break
     return True
+
+
+def load_coach_logs():
+    """저장된 코치 로그(최신순 dict 목록)를 반환. 없거나 실패하면 []."""
+    return _load_store(COACHLOG_TITLE)
 
 
 def append_coach_log(entry, keep=14):
@@ -452,8 +468,58 @@ def append_coach_log(entry, keep=14):
         # 같은 날짜의 기존 항목은 최신 내용으로 대체
         logs = [e for e in logs if not (date and e.get("date") == date)]
         logs.insert(0, entry)
-        logs = logs[:keep]
-        return _write_coachlog(logs)
+        return _write_store(COACHLOG_TITLE, logs[:keep])
+    except Exception:
+        return False
+
+
+# ── 코치 인사이트 로그 (다른 코치의 원문 축적) ───────────────────────
+# 원문을 그대로 두는 게 핵심이라 요약하지 않는다. 대신 항목당 길이를 잘라
+# Notion 블록(조각당 2000자 · 최대 100조각)과 프롬프트 토큰을 함께 지킨다.
+INSIGHT_MAX_CHARS = 6000
+
+
+def load_insights():
+    """저장된 코치 인사이트(최신순 dict 목록)를 반환. 없거나 실패하면 []."""
+    return _load_store(INSIGHT_TITLE)
+
+
+def append_insight(entry, keep=10):
+    """다른 코치의 원문 한 편을 append(최신이 앞). keep개만 유지.
+
+    entry : {"date", "source", "text"} dict. text는 증류하지 않은 원문.
+    같은 날짜라도 내용이 다르면 둘 다 남긴다(하루에 여러 편일 수 있음).
+    같은 날짜 + 같은 내용이면 중복 제출로 보고 하나만 남긴다.
+    """
+    if not has_settings_credentials():
+        return False
+    text = (entry.get("text") or "").strip()
+    if not text:
+        return False
+    entry = dict(entry, text=text[:INSIGHT_MAX_CHARS])
+    try:
+        items = load_insights()
+        items = [e for e in items
+                 if not (e.get("date") == entry.get("date")
+                         and (e.get("text") or "").strip() == entry["text"])]
+        items.insert(0, entry)
+        return _write_store(INSIGHT_TITLE, items[:keep])
+    except Exception:
+        return False
+
+
+def delete_insight(date, source=""):
+    """인사이트 로그에서 (날짜·출처)가 같은 항목을 지운다. 성공하면 True."""
+    if not has_settings_credentials():
+        return False
+    try:
+        items = load_insights()
+        kept = [e for e in items
+                if not (e.get("date") == date
+                        and (e.get("source") or "") == (source or ""))]
+        if len(kept) == len(items):
+            return False
+        return _write_store(INSIGHT_TITLE, kept)
     except Exception:
         return False
 

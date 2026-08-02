@@ -13,7 +13,7 @@ from core import profile as profile_store
 from core import draft
 
 # 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-08-02 · v22 (구간 기록 입력 — 거리 자동계산·코치 구조 분석)"
+APP_VERSION = "2026-08-02 · v23 (코치 인사이트 로그 — 다른 코치 분석을 날짜별 원문으로)"
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
@@ -180,6 +180,21 @@ def _save_profile(filename, data):
                    "프로필이 유지됩니다.")
 
 
+def _stored_insights():
+    """보관된 코치 인사이트 원문 목록(최신순). 세션에 캐시해 매 렌더 호출을 막는다.
+
+    사이드바는 expander가 접혀 있어도 매 렌더 실행되므로, 캐시가 없으면
+    Streamlit이 다시 그릴 때마다 Notion을 부르게 된다. 보관·삭제 직후에는
+    호출부에서 'sb_insights'를 지워 다음 렌더에 새로 읽게 한다.
+    """
+    if "sb_insights" not in st.session_state:
+        try:
+            st.session_state.sb_insights = notion_agent.load_insights()
+        except Exception:
+            st.session_state.sb_insights = []
+    return st.session_state.sb_insights
+
+
 with st.sidebar:
     st.caption(f"🟢 버전 {APP_VERSION}")
     if st.session_state.mode:
@@ -222,32 +237,90 @@ with st.sidebar:
                  "style_memory": style_mem, "coach_memory": coach_mem,
                  "coach_framework": coach_fw, "notes": notes})
 
-        # ── 캐치업: 다른 코치(예: Whoop) 대화를 훈련 노트로 한 번에 가져오기 ──
-        with st.expander("🧠 코치 캐치업 — 다른 코치 대화 가져오기 (한 번만)"):
-            st.caption("Whoop 코치와 나눈 대화나 훈련 메모를 붙여넣거나 파일로 올리면, "
-                       "코치가 그걸 '훈련 노트'로 정리합니다. 한 번 세워두면 "
-                       "이후 일지에서 자동으로 이어집니다. (매번 할 필요 없어요)")
-            src_text = st.text_area("대화/메모 붙여넣기", key="cf_src",
-                        placeholder="Whoop 코치 대화를 그대로 붙여넣으세요...")
+        # ── 캐치업: 다른 코치(예: Whoop)의 분석 가져오기 ──
+        # 두 갈래다. 원문 보관이 평소 쓰는 쪽이고, 훈련 노트 정리는 처음 한 번.
+        # 증류는 뉘앙스를 깎아내므로 매번 노트에 병합하지 않는 게 핵심이다.
+        with st.expander("🧠 코치 캐치업 — 다른 코치 분석 가져오기"):
+            st.caption("Whoop 코치의 분석이나 훈련 메모를 붙여넣거나 파일로 올리세요. "
+                       "**원문 보관**은 받을 때마다(주기적으로), **훈련 노트 정리**는 "
+                       "처음 한 번이나 목표·기본 리듬이 크게 바뀌었을 때만 하면 됩니다.")
+            src_text = st.text_area("분석/메모 붙여넣기", key="cf_src",
+                        placeholder="Whoop 코치 분석을 그대로 붙여넣으세요...")
             up = st.file_uploader("또는 .md / .txt 파일 업로드", type=["md", "txt"],
                         key="cf_file")
-            if st.button("📋 훈련 노트로 정리하기", use_container_width=True):
+
+            def _catchup_text():
+                """붙여넣기 우선, 없으면 업로드 파일에서 원문을 읽는다."""
                 text = (src_text or "").strip()
                 if not text and up is not None:
                     try:
                         text = up.getvalue().decode("utf-8", "ignore").strip()
                     except Exception:
                         text = ""
+                return text
+
+            st.markdown("**① 원문 그대로 보관** — 받을 때마다")
+            st.caption("날짜별 원문으로 쌓아두면, 코치가 요약본이 아니라 원문을 직접 "
+                       "읽고 분석합니다. (최신 2편이 분석에 들어갑니다)")
+            kst_today = datetime.now(timezone(timedelta(hours=9))).date()
+            c1, c2 = st.columns(2)
+            ins_date = c1.date_input("받은 날짜", value=kst_today, key="cf_date")
+            ins_source = c2.text_input("출처", value="Whoop 코치", key="cf_source")
+            if st.button("🗒 원문 보관하기", use_container_width=True):
+                text = _catchup_text()
+                if not text:
+                    st.warning("붙여넣거나 파일을 올려주세요.")
+                elif not notion_agent.has_settings_credentials():
+                    st.error("Notion이 연결되지 않아 보관할 수 없어요. "
+                             "(NOTION_TOKEN·발행 위치 설정이 필요합니다)")
+                else:
+                    with st.spinner("원문을 코치 인사이트 로그에 보관하는 중..."):
+                        ok = notion_agent.append_insight(
+                            {"date": ins_date.strftime("%Y-%m-%d"),
+                             "source": (ins_source or "").strip(),
+                             "text": text})
+                    if ok:
+                        st.session_state.pop("sb_insights", None)
+                        st.success("✅ 원문을 보관했어요 — 다음 일지 분석부터 코치가 읽습니다.")
+                        st.rerun()
+                    else:
+                        st.error("보관에 실패했어요. Notion 연결을 확인해 주세요.")
+
+            # 지금 쌓여 있는 원문 목록. 이 expander는 접혀 있어도 매 렌더 실행되므로
+            # 세션에 캐시해 Notion 호출을 1회로 묶는다 (보관·삭제 후에만 무효화).
+            stored = _stored_insights()
+            if stored:
+                n = coach_agent.INSIGHT_PROMPT_LIMIT
+                st.caption(f"보관된 원문 (최신순 · 위 {n}편이 분석에 들어감)")
+                for i, item in enumerate(stored):
+                    label = f"{item.get('date', '?')} · {item.get('source') or '출처 미상'}"
+                    mark = "🟢" if i < n else "▫️"
+                    row1, row2 = st.columns([5, 1])
+                    row1.markdown(f"{mark} {label} ({len(item.get('text') or '')}자)")
+                    if row2.button("🗑", key=f"cf_del_{i}", help="이 원문 삭제"):
+                        if notion_agent.delete_insight(item.get("date"),
+                                                       item.get("source") or ""):
+                            st.session_state.pop("sb_insights", None)
+                            st.rerun()
+                        else:
+                            st.error("삭제에 실패했어요.")
+
+            st.divider()
+            st.markdown("**② 훈련 노트로 정리** — 처음 한 번 / 큰 변화가 있을 때")
+            st.caption("목표·제약·기본 리듬·벤치마크만 구조화해 '훈련 노트'에 병합합니다. "
+                       "요약이라 원문의 결은 깎이니, 주기적인 분석은 ①로 쌓으세요.")
+            if st.button("📋 훈련 노트로 정리하기", use_container_width=True):
+                text = _catchup_text()
                 if not text:
                     st.warning("붙여넣거나 파일을 올려주세요.")
                 else:
-                    with st.spinner("코치가 대화를 훈련 노트로 정리하는 중..."):
+                    with st.spinner("코치가 자료를 훈련 노트로 정리하는 중..."):
                         try:
                             merged = coach_agent.distill_framework(
                                 p.get("coach_framework", ""), text)
-                        except Exception as e:
+                        except Exception as exc:
                             merged = ""
-                            st.error(f"정리 실패: {e}")
+                            st.error(f"정리 실패: {exc}")
                     if merged:
                         newp = dict(p)
                         newp["coach_framework"] = merged
