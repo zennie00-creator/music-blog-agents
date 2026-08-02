@@ -116,6 +116,69 @@ def workout_line(w):
     return f"{sport_emoji(w.get('sport'))} {w.get('sport','운동')} · " + " · ".join(parts)
 
 
+# ── 구간 기록(스플릿) ─────────────────────────────────────────────────
+# Whoop API는 구간별 스플릿을 주지 않는다. 트레드밀처럼 본인이 정확히 기억하는
+# 경우 직접 적게 해서, 코치가 워밍업/메인/쿨다운 구조까지 보고 분석하게 한다.
+_SPLIT_TIME = re.compile(r"(\d+(?:\.\d+)?)\s*(?:분|min(?:s|utes)?)", re.I)
+_SPLIT_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*(?:km/?h|kph|kmh)", re.I)
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def parse_splits(text):
+    """'2분 6.1 / 10분 8.6km/h' 같은 자유 입력을 구간 목록으로 파싱한다.
+
+    반환: [{"minutes": float, "speed": float, "km": float}, ...]
+    분/속도 순서가 바뀌어도(6.1km/h 2분) 인식한다. 못 읽은 줄은 조용히 건너뛴다.
+    """
+    out = []
+    # 'km/h'의 슬래시가 구간 구분자로 잘리지 않게 먼저 정규화한다
+    norm = re.sub(r"km\s*/\s*h", "kmh", text or "", flags=re.I)
+    for chunk in re.split(r"[\n,/·;]+", norm):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        t = _SPLIT_TIME.search(chunk)
+        s = _SPLIT_SPEED.search(chunk)
+        minutes = float(t.group(1)) if t else None
+        speed = float(s.group(1)) if s else None
+        if minutes is None or speed is None:
+            # 단위가 하나만 붙은 경우: 남은 숫자를 반대쪽 값으로 본다
+            used = {t.group(1) if t else None, s.group(1) if s else None}
+            rest = [n for n in _NUMBER.findall(chunk) if n not in used]
+            if minutes is None and speed is not None and rest:
+                minutes = float(rest[0])
+            elif speed is None and minutes is not None and rest:
+                speed = float(rest[0])
+            elif minutes is None and speed is None and len(rest) >= 2:
+                # 단위가 전혀 없으면 '분 속도' 순서로 가정
+                minutes, speed = float(rest[0]), float(rest[1])
+        if minutes and speed:
+            out.append({"minutes": round(minutes, 1), "speed": round(speed, 2),
+                        "km": round(speed * minutes / 60, 3)})
+    return out
+
+
+def splits_total_km(splits):
+    return round(sum(s["km"] for s in (splits or [])), 2)
+
+
+def splits_total_min(splits):
+    return round(sum(s["minutes"] for s in (splits or [])), 1)
+
+
+def splits_lines(splits):
+    """구간 기록을 요약·발행용 줄 목록으로."""
+    if not splits:
+        return []
+    lines = ["🏃 구간 기록 (직접 입력 — 정확한 기록)"]
+    for s in splits:
+        lines.append(f"{s['minutes']:g}분 @ {s['speed']:g} km/h "
+                     f"· {s['km']:.2f} km")
+    lines.append(f"합계: {splits_total_min(splits):g}분 · "
+                 f"{splits_total_km(splits):.2f} km")
+    return lines
+
+
 def _distance_text(w):
     """편집된 운동의 거리 표기. distance_source: gps|manual|none."""
     src = w.get("distance_source", "gps")
@@ -154,6 +217,13 @@ def _one_workout_lines(w, idx=None, total=1):
                       for k, v in sorted(zones.items()) if v)
         if z:
             lines.append(f"· 심박존 분포: {z}")
+    # 구간 기록은 본인이 정확히 기억해 적은 값 — 코치가 구조까지 보게 넘긴다
+    sp = w.get("splits")
+    if sp:
+        lines.append("· 구간 기록 (본인이 직접 기록 — 정확함):")
+        for s in sp:
+            lines.append(f"   {s['minutes']:g}분 @ {s['speed']:g} km/h "
+                         f"({s['km']:.2f} km)")
     return lines
 
 
