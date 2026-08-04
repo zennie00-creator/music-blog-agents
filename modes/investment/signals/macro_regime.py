@@ -165,7 +165,9 @@ def run(ctx):
     en = _energy_5wk(ctx)
     if en is not None:
         flag = " 🚩 급등(인플레·금리 상방)" if en >= ENERGY_SURGE_PCT else ""
-        lines.append(f"- 에너지(WTI/USO) {ENERGY_WINDOW}거래일: {en:+.1f}%{flag}")
+        # USO는 WTI를 추종하는 ETF다. 배럴당 유가가 아니라 ETF 가격 변화율이므로
+        # 'WTI 가격'으로 읽히지 않게 표기한다 (수준이 아니라 방향·변화율만 의미 있음).
+        lines.append(f"- 에너지(원유 ETF USO, WTI 추종) {ENERGY_WINDOW}거래일 변화: {en:+.1f}%{flag}")
 
     sox = _sox_yoy(ctx)
     if sox:

@@ -30,6 +30,19 @@ _XAI_BASE = "https://api.x.ai/v1"
 # 프로세스 내에서 한 번 해결한 모델명을 재사용 (매 호출 /v1/models 조회 방지).
 _RESOLVED_GROK_MODEL = None
 
+# xAI가 라이브 검색(search_parameters)을 폐기하면 410을 준다. 한 번 확인되면
+# 이후 호출은 처음부터 검색 없이 보낸다 — 모델 후보를 헛되이 순회하지 않도록.
+_LIVE_SEARCH_OK = True
+
+
+class LiveSearchUnsupported(RuntimeError):
+    """search_parameters가 거부됨 — 모델이 아니라 '검색' 문제라는 신호."""
+
+
+def _is_search_deprecated(body: str) -> bool:
+    b = (body or "").lower()
+    return "live search" in b or ("search" in b and "deprecat" in b)
+
 
 def _rank_grok_models(model_ids):
     """xAI /v1/models 목록을 채팅용 Grok 우선순위로 정렬한 리스트로 반환.
@@ -147,8 +160,13 @@ def ask_grok(system: str, user: str, live_search: bool = True,
             # chat/completions가 410(Gone)이면 엔드포인트 은퇴 가능성 → responses 시도
             if e.response is not None and e.response.status_code == 410:
                 # 410의 실제 사유는 응답 본문에만 있다(raise_for_status는 버림).
-                # 계정/모델/엔드포인트 중 무엇이 문제인지 한 번은 보여준다.
                 body = (e.response.text or "")[:200].replace("\n", " ")
+                # 사유가 '라이브 검색 폐기'면 모델·엔드포인트를 바꿔도 소용없다.
+                # 모델 순회로 착각해 후보를 전부 찔러보던 낭비를 여기서 끊는다.
+                if search_params and _is_search_deprecated(body):
+                    global _LIVE_SEARCH_OK
+                    _LIVE_SEARCH_OK = False
+                    raise LiveSearchUnsupported(body) from e
                 print(f"  🔻 xAI 410 ({model} chat/completions): {body}")
                 return _post_responses(model, search_params)
             raise
@@ -192,7 +210,12 @@ def ask_grok(system: str, user: str, live_search: bool = True,
                 raise  # 모델 문제가 아닌 오류는 즉시 전파
         raise last or RuntimeError("xAI에서 사용 가능한 Grok 모델을 찾지 못했습니다")
 
-    if not live_search:
+    # 라이브 검색이 폐기된 계정/시점이면 처음부터 검색 없이 간다 (헛호출 방지)
+    if not live_search or not _LIVE_SEARCH_OK:
+        return _call(None)
+
+    def _without_search(reason):
+        print(f"  ℹ️ xAI 라이브 검색 폐기됨 → 검색 없이 진행 (이후 호출도 생략): {reason[:100]}")
         return _call(None)
 
     if x_handles:
@@ -206,12 +229,17 @@ def ask_grok(system: str, user: str, live_search: bool = True,
         }
         try:
             return _call(rich)
+        except LiveSearchUnsupported as e:
+            return _without_search(str(e))
         except requests.HTTPError as e:
             if e.response is not None and 400 <= e.response.status_code < 500:
                 print("  ⚠️ X 핸들 검색 파라미터 미지원 — 기본 검색으로 폴백")
             else:
                 raise
-    return _call({"mode": "auto"})
+    try:
+        return _call({"mode": "auto"})
+    except LiveSearchUnsupported as e:
+        return _without_search(str(e))
 
 
 def grok_diagnose():
