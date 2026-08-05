@@ -18,7 +18,7 @@ from datetime import date as _date
 from core import config
 from core.notify import alert_lines, push
 from core.notion import publish_page
-from modes.investment import charts, market_data, signal_log, signals
+from modes.investment import charts, dram_spot, market_data, signal_log, signals
 from modes.investment.analysis_agent import analyze_market
 from modes.investment.journal_agent import write_journal
 
@@ -54,6 +54,14 @@ def load_thesis() -> str:
 def _collect():
     ctx = market_data.collect_context()
     data_md = market_data.dashboard_md(ctx) + "\n\n" + signals.run_all(ctx)
+    # 반도체 현물가(스팟) — 전제 기둥3의 '일일 현물가' 판정을 실제 숫자로.
+    # 접근 실패 시 빈 문자열이라 뉴스 기반 메모리 워치가 그대로 커버한다.
+    try:
+        spot_md = dram_spot.markdown()
+        if spot_md:
+            data_md += "\n\n" + spot_md
+    except Exception as e:
+        print(f"  ⚠️ DRAM 스팟 수집 스킵: {e}")
     if signal_log.record(ctx):
         print("  🗂 신호 로그 기록 (signal_log/)")
     return ctx, data_md
