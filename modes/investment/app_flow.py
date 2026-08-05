@@ -106,18 +106,58 @@ def _publish_journal(memo: str, publish: bool):
     return journal, url
 
 
+def _notion_key() -> str:
+    """투자용 키가 없으면 기존 모드가 쓰는 NOTION_TOKEN을 쓴다 (같은 통합이면 동일)."""
+    key = os.environ.get("NOTION_API_KEY") or os.environ.get("NOTION_TOKEN", "")
+    if key:
+        os.environ["NOTION_API_KEY"] = key
+        notion.config.NOTION_API_KEY = key
+    return key
+
+
+def _pick_database() -> bool:
+    """DB ID가 없으면 접근 가능한 DB를 보여주고 고르게 한다.
+
+    ID를 URL에서 손으로 뽑는 것보다 안전하고, 값을 모르는 상태에서도 바로 쓸 수 있다."""
+    chosen = st.session_state.get("iv_db_id") or os.environ.get("NOTION_DATABASE_ID", "")
+    if chosen:
+        notion.config.NOTION_DATABASE_ID = chosen
+        return True
+    st.warning("`NOTION_DATABASE_ID`가 없습니다. 아래에서 투자 일지 데이터베이스를 고르세요.")
+    try:
+        dbs = notion.list_databases()
+    except Exception as e:
+        st.error(f"데이터베이스 목록 조회 실패: {e}")
+        return False
+    if not dbs:
+        st.error("이 통합이 접근할 수 있는 데이터베이스가 없습니다. "
+                 "Notion에서 해당 DB를 열고 ⋯ → 연결 → 통합을 추가해 주세요.")
+        return False
+    labels = [d["title"] for d in dbs]
+    i = st.selectbox("데이터베이스", range(len(dbs)), format_func=lambda x: labels[x])
+    if st.button("이 DB 사용", type="primary"):
+        st.session_state.iv_db_id = dbs[i]["id"]
+        notion.config.NOTION_DATABASE_ID = dbs[i]["id"]
+        st.rerun()
+    st.caption("고른 뒤에도 매번 선택하지 않으려면 Secrets에 "
+               "`NOTION_DATABASE_ID`로 저장해 두세요 (선택하면 값이 표시됩니다).")
+    return False
+
+
 def _config_ok() -> bool:
     """필요한 키가 있는지 먼저 보여준다 — 없으면 조회가 조용히 실패해 원인을 못 찾는다."""
-    need = {"NOTION_API_KEY": "브리핑 읽기·일지 발행",
-            "NOTION_DATABASE_ID": "투자 일지 DB",
-            "ANTHROPIC_API_KEY": "토론·일지 작성"}
-    missing = [k for k in need if not os.environ.get(k)]
-    if missing:
-        st.error("설정이 빠져 있어 진행할 수 없습니다: "
-                 + ", ".join(f"`{k}`({need[k]})" for k in missing))
-        st.caption("Streamlit Cloud → Manage app → Settings → Secrets 에 추가한 뒤 "
-                   "앱이 재시작되면 사라집니다.")
+    if not _notion_key():
+        st.error("`NOTION_API_KEY`(또는 `NOTION_TOKEN`)가 없습니다 — 브리핑 읽기·일지 발행에 필요합니다.")
+        st.caption("Streamlit Cloud → Manage app → Settings → Secrets 에 추가해 주세요.")
         return False
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        st.error("`ANTHROPIC_API_KEY`가 없습니다 — 토론·일지 작성에 필요합니다.")
+        return False
+    if not _pick_database():
+        return False
+    if st.session_state.get("iv_db_id"):
+        st.caption(f"DB: `{st.session_state.iv_db_id}` "
+                   "— Secrets의 `NOTION_DATABASE_ID`에 넣으면 다음부터 자동입니다.")
     if not os.environ.get("XAI_API_KEY"):
         st.caption("ℹ️ XAI_API_KEY 없음 — 리서치 역할은 Claude가 대행합니다.")
     return True

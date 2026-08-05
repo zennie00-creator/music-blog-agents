@@ -170,6 +170,7 @@ DEFAULTS = {
     "iv_memo": "",
     "iv_candidates": [],    # 날짜로 찾은 브리핑 후보 (여러 번 발행 시 선택)
     "iv_fallback": [],      # 못 찾았을 때 보여줄 DB 최근 목록
+    "iv_db_id": "",         # Secrets에 DB ID가 없을 때 앱에서 고른 값
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
