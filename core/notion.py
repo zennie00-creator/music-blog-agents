@@ -184,31 +184,50 @@ def _blocks_to_text(page_id: str, limit_blocks: int = 300) -> str:
     return "\n".join(out)
 
 
-def fetch_page_by_title(title_contains: str, database_id: str = "") -> tuple:
-    """DB에서 제목에 문자열이 포함된 最新 페이지를 찾아 (제목, 본문텍스트, url).
+def list_pages(title_contains: str = "", database_id: str = "", limit: int = 10):
+    """DB의 페이지 목록 → [{title, id, url, created}] (최신순).
 
-    발행된 Notion 페이지가 곧 단일 진실이므로, 앱은 이걸 그대로 읽어 쓴다.
-    찾지 못하면 ("", "", "")."""
+    title_contains가 비면 필터 없이 최근 것을 돌려준다 — 제목이 예상과 다를 때
+    실제로 무엇이 있는지 보여주기 위함이다."""
     database_id = database_id or config.NOTION_DATABASE_ID
     if not database_id:
-        return "", "", ""
+        return []
     title_prop = _title_property_name(database_id)
     payload = {
-        "filter": {"property": title_prop, "title": {"contains": title_contains}},
         "sorts": [{"timestamp": "created_time", "direction": "descending"}],
-        "page_size": 1,
+        "page_size": max(1, min(limit, 100)),
     }
+    if title_contains:
+        payload["filter"] = {"property": title_prop,
+                             "title": {"contains": title_contains}}
     r = requests.post(f"{_API}/databases/{database_id}/query",
                       headers=_headers(), json=payload, timeout=30)
     if not r.ok:
         raise RuntimeError(f"Notion 조회 실패 {r.status_code}: {r.text[:200]}")
-    results = r.json().get("results", [])
-    if not results:
+    out = []
+    for page in r.json().get("results", []):
+        props = page.get("properties", {}).get(title_prop, {})
+        out.append({
+            "title": _plain(props.get("title")) or "(제목 없음)",
+            "id": page["id"],
+            "url": page.get("url", ""),
+            "created": (page.get("created_time") or "")[:16].replace("T", " "),
+        })
+    return out
+
+
+def read_page(page_id: str) -> str:
+    """페이지 본문을 읽기용 텍스트로."""
+    return _blocks_to_text(page_id)
+
+
+def fetch_page_by_title(title_contains: str, database_id: str = "") -> tuple:
+    """제목에 문자열이 포함된 최신 페이지 → (제목, 본문텍스트, url). 없으면 ("","","")."""
+    pages = list_pages(title_contains, database_id, limit=1)
+    if not pages:
         return "", "", ""
-    page = results[0]
-    props = page.get("properties", {}).get(title_prop, {})
-    title = _plain(props.get("title"))
-    return title, _blocks_to_text(page["id"]), page.get("url", "")
+    p = pages[0]
+    return p["title"], _blocks_to_text(p["id"]), p["url"]
 
 
 def _title_property_name(database_id: str) -> str:

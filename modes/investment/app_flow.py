@@ -44,13 +44,11 @@ def _password_ok() -> bool:
     return False
 
 
-def _load_brief(day: str):
-    """Notion에서 해당 날짜의 모닝 브리핑을 읽어 세션에 담는다."""
-    title, body, url = notion.fetch_page_by_title(day)
-    st.session_state.iv_brief = body
-    st.session_state.iv_brief_title = title
-    st.session_state.iv_brief_url = url
-    return bool(body)
+def _load_page(page: dict):
+    """선택한 Notion 페이지를 세션에 담는다."""
+    st.session_state.iv_brief = notion.read_page(page["id"])
+    st.session_state.iv_brief_title = page["title"]
+    st.session_state.iv_brief_url = page.get("url", "")
 
 
 def _context() -> str:
@@ -115,18 +113,44 @@ def run():
     day = st.date_input("날짜", value=_date.today()).isoformat()
     col1, col2 = st.columns([1, 3])
     with col1:
-        if st.button("브리핑 불러오기", use_container_width=True):
-            with st.spinner("Notion에서 읽는 중..."):
+        if st.button("브리핑 찾기", use_container_width=True):
+            with st.spinner("Notion에서 찾는 중..."):
                 try:
-                    ok = _load_brief(day)
-                    if not ok:
-                        st.warning(f"{day} 브리핑을 찾지 못했습니다.")
+                    st.session_state.iv_candidates = notion.list_pages(day, limit=10)
+                    # 그 날짜로 못 찾으면 최근 목록을 보여준다 — 제목 형식이
+                    # 예상과 다를 수 있으므로 실제로 무엇이 있는지 보여야 한다.
+                    st.session_state.iv_fallback = (
+                        [] if st.session_state.iv_candidates
+                        else notion.list_pages("", limit=10))
                 except Exception as e:
-                    st.error(f"불러오기 실패: {e}")
+                    st.error(f"조회 실패: {e}")
     with col2:
         if st.session_state.iv_brief_url:
-            st.caption(f"[{st.session_state.iv_brief_title}]"
+            st.caption(f"불러옴: [{st.session_state.iv_brief_title}]"
                        f"({st.session_state.iv_brief_url})")
+
+    cands = st.session_state.get("iv_candidates") or []
+    if cands:
+        # 하루에 여러 번 발행됐을 수 있다 → 고르게 한다 (기본값은 가장 최근 것)
+        labels = [f"{c['created']} · {c['title']}" for c in cands]
+        idx = 0 if len(cands) == 1 else st.selectbox(
+            f"{len(cands)}건 발견 — 어느 것을 쓸까요",
+            range(len(cands)), format_func=lambda i: labels[i])
+        if st.button("이 페이지 불러오기", type="primary"):
+            with st.spinner("본문 읽는 중..."):
+                try:
+                    _load_page(cands[idx])
+                    st.session_state.iv_candidates = []
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"읽기 실패: {e}")
+
+    fb = st.session_state.get("iv_fallback") or []
+    if fb:
+        st.warning(f"{day} 제목의 페이지가 없습니다. DB의 최근 페이지는 이렇습니다 — "
+                   "제목 형식이 다르거나 다른 DB일 수 있습니다.")
+        for c in fb:
+            st.caption(f"· {c['created']} · {c['title']}")
 
     if st.session_state.iv_brief:
         with st.expander("오늘의 브리핑", expanded=not st.session_state.iv_messages):
