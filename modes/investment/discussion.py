@@ -31,12 +31,19 @@ COMPACT_TRIGGER = 12  # 발언이 이만큼 쌓이면 오래된 부분을 요약
 SOURCE_RULE = """
 
 출처 표기:
-- 브리핑이나 전제의 내용을 근거로 쓸 때는 그 문장 끝에 [1], [2] 처럼 각주 번호를 다세요.
+- 브리핑·전제·검색 자료의 내용을 근거로 쓸 때는 그 문장 끝에 [1], [2] 처럼 각주를 다세요.
+- '질문에 맞춰 방금 검색한 자료'가 주어지면 그것을 우선 근거로 삼으세요 —
+  브리핑에 없는 질문일수록 이쪽에 답이 있습니다. 기사 제목의 사실만 쓰고,
+  본문을 읽은 것처럼 세부를 지어내지 마세요.
+- 분기 재무 표(SEC EDGAR)가 있으면 추세를 직접 읽어 답하세요 — 전분기·1년 전 대비
+  어떻게 변했는지 수치로 비교하고, 한 분기 값만 보고 단정하지 마세요.
+  단, 표의 마진은 GAAP 영업마진이라 보도되는 adjusted·FCF 기준과 다를 수 있음을
+  전제하고, 그 차이가 중요한 질문이면 그 점을 밝히세요.
 - 답변 맨 끝에 '---' 한 줄을 긋고 각주 목록을 답니다. 형식:
   [1] 브리핑 · 동적 클러스터
-  [2] 브리핑 · 실적 시즌 요약 (Bloomberg)
+  [2] 검색 자료 · "Palantir beats estimates" (CNBC)
   [3] 나의 전제 · 기둥 3(반도체 업황)
-  브리핑 안에 매체명이 있으면 괄호로 함께 적으세요.
+  매체명이 있으면 괄호로 함께 적으세요.
 - 브리핑·전제에 없는 일반 지식으로 말하는 부분에는 각주를 달지 말고,
   '확인되지 않음' 또는 '일반적으로 알려진 바로는'처럼 성격을 밝히세요.
   실시간 검색이 없으므로 최신 사실을 단정하지 마세요.
@@ -124,10 +131,12 @@ def _fmt(messages) -> str:
     return "\n\n".join(f"[{s}] {t}" for s, t in messages)
 
 
-def _context(state, thesis: str, brief: str = "") -> str:
+def _context(state, thesis: str, brief: str = "", found: str = "") -> str:
     parts = []
     if thesis.strip():
         parts.append(f"[투자자의 장기 전제]\n{thesis.strip()}")
+    if found.strip():
+        parts.append(f"[질문에 맞춰 방금 검색한 자료]\n{found.strip()}")
     if brief.strip():
         # 오늘 브리핑을 토론의 출발점으로 — 신호·클러스터·뉴스를 이미 공유한 상태에서 시작
         parts.append(f"[오늘의 모닝 브리핑 — 이 내용을 전제로 토론한다]\n{brief.strip()}")
@@ -176,6 +185,55 @@ def _archive(state, summary: str):
 
 
 # ── 공개 API ────────────────────────────────────────────
+
+TERMS_PROMPT = """다음 질문에 답하려면 어떤 뉴스를 찾아야 할까요.
+
+질문: {question}
+
+영문 검색어 2개를 쉼표로만 출력하세요 (설명·따옴표 금지).
+회사명·지표명처럼 기사에 실제로 쓰이는 표현으로 만드세요.
+예: Palantir Rule of 40 margin, Palantir revenue growth guidance"""
+
+
+def search_for_question(question: str, per_term: int = 5) -> str:
+    """질문에 맞는 기사를 새로 찾아 온다.
+
+    브리핑 안에만 근거를 두면 브리핑 밖 질문에는 '확인되지 않음'밖에 답할 수 없다.
+    xAI 라이브 검색은 폐기됐지만 Google News RSS는 살아 있으므로 그걸로 대신한다.
+    실패하면 빈 문자열 — 토론은 브리핑 근거만으로 계속된다."""
+    from modes.investment.earnings import _news_rss, _render_group
+    try:
+        raw = ask_claude("검색어를 뽑는 도우미입니다. 요청된 형식만 출력하세요.",
+                         TERMS_PROMPT.format(question=question.strip()[:300]),
+                         max_tokens=100)
+    except Exception as e:
+        print(f"  ⚠️ 검색어 추출 실패: {e}")
+        return ""
+    terms = [t.strip(" \"'\n") for t in raw.replace("\n", ",").split(",")]
+    terms = [t for t in terms if 2 < len(t) < 80][:2]
+    groups = []
+    for t in terms:
+        try:
+            items = _news_rss(t, when="21d")[:per_term]
+        except Exception:
+            continue
+        if items:
+            groups.append(_render_group(t, items))
+    news_md = ""
+    if groups:
+        news_md = ("아래는 이 질문에 맞춰 방금 검색한 기사 헤드라인입니다"
+                   " (Google News, 최근 3주). 답변에 쓸 때는 매체명을 출처로 밝히세요:\n\n"
+                   + "\n\n".join(groups))
+
+    # 뉴스는 '무슨 일이 있었나'만 답한다. '숫자가 어떻게 변해왔나'는 공시로 본다.
+    try:
+        from modes.investment import fundamentals
+        fin_md = fundamentals.context_for(question)
+    except Exception as e:
+        print(f"  ⚠️ 재무 시계열 조회 실패: {e}")
+        fin_md = ""
+    return "\n\n".join(x for x in (fin_md, news_md) if x)
+
 
 def _research(prompt: str):
     """리서치 발언 담당 — Grok 우선, 불가하면 Claude가 그 역할을 대행.
@@ -255,16 +313,23 @@ def discuss(topic: str, thesis: str = "", brief: str = ""):
     while user_input and user_input.lower() not in ("종료", "exit", "quit", "q"):
         state["messages"].append(["나", user_input])
 
+        print("🔎 질문에 맞는 자료 검색 중...")
+        found = search_for_question(user_input)
+        if found:
+            print(f"  📄 관련 기사 {found.count('- ')}건 확보")
+
         print("🔍 리서치 분석 중...")
         researcher, research_answer = _research(
-            f"{_context(state, thesis, brief)}\n\n마지막 발언에 대해 최신 데이터를 근거로 답하세요.")
+            f"{_context(state, thesis, brief, found)}\n\n"
+            "마지막 발언에 대해 최신 데이터를 근거로 답하세요.")
         state["messages"].append([researcher, research_answer])
         print(f"\n[{researcher}]\n{research_answer}\n")
 
         print("🧐 Claude 검토 중...")
         claude_review = ask_claude(
             CLAUDE_SYSTEM,
-            f"{_context(state, thesis, brief)}\n\n위 {researcher}의 마지막 분석을 검토하세요.",
+            f"{_context(state, thesis, brief, found)}\n\n"
+            f"위 {researcher}의 마지막 분석을 검토하세요.",
             max_tokens=2048,
         )
         state["messages"].append(["Claude", claude_review])

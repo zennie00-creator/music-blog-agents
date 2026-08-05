@@ -34,15 +34,19 @@ def parse_feed(xml_text: str, source: str = ""):
         tag = node.tag.split("}")[-1]
         if tag not in ("item", "entry"):
             continue
-        title, pub = "", ""
+        title, pub, outlet = "", "", ""
         for ch in node:
             ctag = ch.tag.split("}")[-1]
             if ctag == "title" and not title:
                 title = _strip_html(_text(ch))
             elif ctag in ("pubDate", "published", "updated") and not pub:
                 pub = _text(ch)
+            elif ctag == "source" and not outlet:
+                # Google News RSS는 <source>에 실제 매체명을 담는다. 이게 있어야
+                # 브리핑·토론에서 근거를 되짚을 수 있다.
+                outlet = _strip_html(_text(ch))
         if title:
-            items.append({"title": title, "source": source, "published": pub})
+            items.append({"title": title, "source": outlet or source, "published": pub})
     return items
 
 
