@@ -16,11 +16,21 @@ _UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                      "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
        "Accept": "application/json,text/plain,*/*"}
 
-# CBOE 무료 딜레이드 통계 엔드포인트 후보 (위에서부터 시도)
-_ENDPOINTS = [
-    "https://cdn.cboe.com/api/global/delayed_quotes/put_call_ratios.json",
-    "https://cdn.cboe.com/data/us/options/market_statistics/daily/all_daily_statistics.json",
-]
+# 후보 소스 (위에서부터 시도). cdn.cboe.com은 데이터센터 IP에 403을 주는 것이
+# 확인됐으므로(Actions 로그), www 계열·일자 지정 CSV 등 다른 경로도 함께 시도한다.
+# 어느 경로가 러너에서 살아있는지는 실행 로그로 판별된다.
+def _endpoints():
+    from datetime import date, timedelta
+    day = date.today()
+    if day.weekday() >= 5:  # 주말이면 직전 금요일자
+        day -= timedelta(days=day.weekday() - 4)
+    ymd = day.isoformat()
+    return [
+        "https://cdn.cboe.com/api/global/delayed_quotes/put_call_ratios.json",
+        "https://cdn.cboe.com/data/us/options/market_statistics/daily/all_daily_statistics.json",
+        f"https://www.cboe.com/us/options/market_statistics/daily/?dt={ymd}",
+        "https://www.cboe.com/us/options/market_statistics/",
+    ]
 
 
 def _parse(data):
@@ -43,18 +53,38 @@ def _parse(data):
     return ratios
 
 
+def _parse_html(text):
+    """HTML 페이지에서 'Total Put/Call Ratio 0.93' 형태의 값을 찾는다."""
+    import re
+    out = {}
+    for label, key in (("total", "total_ratio"), ("index", "index_ratio"),
+                       ("equity", "equity_ratio")):
+        m = re.search(rf"{label}[^<>]{{0,40}}?put[/\s]*call[^<>]{{0,40}}?"
+                      r"(\d\.\d{2})", text, re.I | re.S)
+        if m:
+            v = float(m.group(1))
+            if 0 < v < 5:
+                out[key] = v
+    return out
+
+
 def fetch():
     last_err = None
-    for url in _ENDPOINTS:
+    for url in _endpoints():
         try:
             r = requests.get(url, headers=_UA, timeout=30)
             r.raise_for_status()
-            ratios = _parse(r.json())
+            body = r.text
+            try:
+                ratios = _parse(r.json())
+            except ValueError:      # JSON이 아니면 HTML로 시도
+                ratios = _parse_html(body)
             if ratios:
+                print(f"  ✅ Put/Call 소스 확보: {url.split('//')[-1][:60]}")
                 return ratios, None
-            last_err = f"{url.rsplit('/', 1)[-1]}: 200이지만 비율 필드 없음"
+            last_err = f"{url.split('//')[-1][:50]}: 200이지만 비율을 찾지 못함"
         except Exception as e:
-            last_err = f"{url.rsplit('/', 1)[-1]}: {type(e).__name__} {str(e)[:80]}"
+            last_err = f"{url.split('//')[-1][:50]}: {type(e).__name__} {str(e)[:60]}"
     return {}, last_err
 
 
