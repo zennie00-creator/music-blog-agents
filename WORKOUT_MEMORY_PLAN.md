@@ -63,3 +63,6 @@
 - 긴 글 revise는 `max_tokens` 자동 확대 (`core/writer.py`).
 - **main에는 invest 세션도 푸시 중** — 충돌 방지 위해 이 작업은 **별도
   브랜치 → PR**로 진행 권장. `app.py`를 invest 세션과 동시에 편집하지 말 것.
+  그리고 **PR을 올렸으면 곧바로 `subscribe_pr_activity`로 감시를 걸 것.**
+  v23(#66)에서 실제로 당했다 — PR을 올린 뒤 invest가 29커밋을 밀어 넣어
+  `app.py`가 충돌했는데, 아무 알림이 없어 사용자가 머지하려다 발견했다.
