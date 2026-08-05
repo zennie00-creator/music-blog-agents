@@ -171,7 +171,7 @@ DEFAULTS = {
     "iv_candidates": [],    # 날짜로 찾은 브리핑 후보 (여러 번 발행 시 선택)
     "iv_fallback": [],      # 못 찾았을 때 보여줄 DB 최근 목록
     "iv_db_id": "",         # Secrets에 DB ID가 없을 때 앱에서 고른 값
-    "iv_sources": "",       # 직전 답변이 참고한 공시·기사 (무엇을 근거로 했는지 확인용)
+    "iv_sources": [],       # 질문별 참고 자료 누적 [{q, md}] (근거를 되짚기 위함)
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:

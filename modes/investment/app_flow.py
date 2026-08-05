@@ -18,6 +18,8 @@ from modes.investment import discussion
 from modes.investment.journal_agent import write_journal
 from modes.investment.pipeline import load_thesis, load_trades
 
+REVIEWER = "Claude(검토)"
+
 
 def _password_ok() -> bool:
     """공개 배포 앱이라 투자 모드는 잠근다. 키가 없으면 잠금 자체를 알린다."""
@@ -77,8 +79,9 @@ def _round(question: str):
         except Exception as e:
             found = ""
             st.warning(f"자료 검색 실패 — 브리핑 근거로만 답합니다: {e}")
-    # 무엇을 근거로 답했는지 보이게 한다. 수집이 실패해도 화면에서 바로 드러난다.
-    st.session_state.iv_sources = found
+    # 무엇을 근거로 답했는지 보이게 한다. 질문마다 쌓아 둔다 —
+    # 덮어쓰면 앞선 질문의 근거를 다시 볼 수 없다.
+    st.session_state.iv_sources.append({"q": question, "md": found})
     if not found:
         st.info("이번 질문에 대해 외부 자료(공시·기사)를 찾지 못했습니다 — "
                 "브리핑·전제 범위에서만 답합니다.")
@@ -98,7 +101,22 @@ def _round(question: str):
                 max_tokens=2048)
         except Exception as e:
             review = f"(검토 실패: {e})"
-    st.session_state.iv_messages.append(("Claude(검토)", review))
+    st.session_state.iv_messages.append((REVIEWER, review))
+
+
+def _review_last():
+    """마지막 리서치 발언에 대한 검토만 다시 실행 (라운드가 중간에 끊겼을 때)."""
+    msgs = st.session_state.iv_messages
+    who = next((s for s, _ in reversed(msgs) if s not in ("나", REVIEWER)), "리서치")
+    found = (st.session_state.iv_sources or [{}])[-1].get("md", "")
+    with st.spinner("검토 중..."):
+        try:
+            review = ask_claude(discussion.CLAUDE_SYSTEM,
+                                f"{_context(found)}\n\n위 {who}의 마지막 분석을 검토하세요.",
+                                max_tokens=2048)
+        except Exception as e:
+            review = f"(검토 실패: {e})"
+    msgs.append((REVIEWER, review))
 
 
 def _publish_journal(memo: str, publish: bool):
@@ -234,15 +252,28 @@ def run():
     if not st.session_state.iv_brief:
         st.caption("브리핑을 먼저 불러오면 신호·클러스터·뉴스를 공유한 상태로 토론합니다.")
 
-    if st.session_state.get("iv_sources"):
-        with st.expander("직전 답변이 참고한 자료 (공시·기사)"):
-            st.markdown(st.session_state.iv_sources)
+    srcs = st.session_state.get("iv_sources") or []
+    if srcs:
+        st.caption("참고 자료 (질문별로 누적)")
+        for i, s in enumerate(srcs, 1):
+            head = s["q"][:34] + ("…" if len(s["q"]) > 34 else "")
+            with st.expander(f"{i}. {head}", expanded=(i == len(srcs))):
+                st.markdown(s["md"] or "_외부 자료를 찾지 못했습니다 "
+                                       "(브리핑·전제 범위에서만 답변)._")
 
     for speaker, text in st.session_state.iv_messages:
         with st.chat_message("user" if speaker == "나" else "assistant"):
             if speaker != "나":
                 st.caption(speaker)
             st.markdown(text)
+
+    # 라운드가 중간에 끊기면 검토가 빠진 채로 남는다 → 그 부분만 다시 돌릴 수 있게
+    msgs = st.session_state.iv_messages
+    if msgs and msgs[-1][0] not in ("나", REVIEWER):
+        st.caption("검토 의견이 아직 없습니다 (연결이 끊겼을 수 있습니다).")
+        if st.button("검토 다시 실행"):
+            _review_last()
+            st.rerun()
 
     if q := st.chat_input("질문이나 생각을 입력하세요"):
         _round(q)
