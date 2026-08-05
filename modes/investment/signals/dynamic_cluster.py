@@ -21,10 +21,16 @@ TITLE = "동적 클러스터 — 오늘 같이 움직인 종목군 (자동 감�
 _STORE = os.path.join(config.ROOT_DIR, "signal_log", "clusters.jsonl")
 
 CORR_WINDOW = 20      # 상관 계산 거래일
-MIN_MOVE_PCT = 1.5    # 오늘 이만큼(절대값) 움직인 종목만 후보
-CORR_THRESHOLD = 0.55  # 이 이상 상관이면 같은 그룹으로 연결
+MIN_MOVE_PCT = 1.5    # 오늘 시장 대비 이만큼(%p) 초과로 움직인 종목만 후보
+CORR_THRESHOLD = 0.5  # 이 이상이라야 '함께 움직인다'고 말한다 (미만은 묶지 않음)
+STRONG_CORR = 0.7     # 강한 동조
 MIN_CLUSTER = 3       # 이 미만 그룹은 보고하지 않음
 MAX_REPORT = 4        # 보고할 그룹 수 상한
+
+# 시장 기준(잔차 계산용). 지수 자체는 클러스터 대상이 아니다 —
+# 지수는 개별 종목의 합이라 항상 같이 움직이고, 그건 '테마'가 아니다.
+MARKET = "gsheet/INDEXSP:.INX"
+_INDEX_TOKENS = ("INDEX", "KOSPI", "CURRENCY", "KRW")
 
 
 def _corr(xs, ys):
@@ -49,21 +55,36 @@ def _today_move(rows):
 MIN_PAIR_DAYS = 8     # 쌍별 상관에 필요한 최소 공통 거래일
 
 
-def _pair_returns(ca, cb):
+def _pair_returns(ca, cb, cm=None):
     """두 종목의 '쌍별 공통 거래일'로 만든 수익률 쌍.
 
-    전체 교집합을 쓰면 신규상장 한 종목 때문에 표본이 통째로 짧아진다.
-    쌍마다 겹치는 날짜만 쓰면 이력이 긴 종목끼리는 온전히 비교된다."""
-    common = sorted(set(ca) & set(cb))[-(CORR_WINDOW + 1):]
+    cm(시장 종가)을 주면 시장 수익률을 뺀 잔차로 돌려준다. 시장 공통 요인을
+    제거해야 '함께 움직인다'가 테마를 뜻하게 된다 — 시장이 다 오른 날의
+    동반 상승은 관계가 아니라 베타다 (엔비디아·마이크론 원상관 0.44 →
+    잔차 0.27처럼, 원상관은 관계를 과장한다).
+
+    전체 교집합 대신 쌍별 공통 날짜를 쓰므로 신규상장 종목이 표본을 깎지 않는다."""
+    keys = set(ca) & set(cb)
+    if cm is not None:
+        keys &= set(cm)
+    common = sorted(keys)[-(CORR_WINDOW + 1):]
     if len(common) < MIN_PAIR_DAYS:
         return None, None
     ra, rb = [], []
     for i in range(1, len(common)):
         pa0, pa1 = ca[common[i - 1]], ca[common[i]]
         pb0, pb1 = cb[common[i - 1]], cb[common[i]]
-        if pa0 and pb0:
-            ra.append((pa1 - pa0) / pa0)
-            rb.append((pb1 - pb0) / pb0)
+        if not (pa0 and pb0):
+            continue
+        x, y = (pa1 - pa0) / pa0, (pb1 - pb0) / pb0
+        if cm is not None:
+            m0, m1 = cm[common[i - 1]], cm[common[i]]
+            if not m0:
+                continue
+            mr = (m1 - m0) / m0
+            x, y = x - mr, y - mr
+        ra.append(x)
+        rb.append(y)
     return ra, rb
 
 
@@ -83,52 +104,78 @@ class _DSU:
             self.p[rb] = ra
 
 
+def _is_index(sym):
+    up = sym.upper()
+    return any(tok in up for tok in _INDEX_TOKENS)
+
+
 def find_clusters(ctx):
-    """→ [ (심볼목록, 평균등락%, 평균상관) ] — 큰 그룹·강한 동조 순."""
+    """→ [ (심볼목록, 평균 초과등락%p, 평균 잔차상관) ] — 강한 동조 순.
+
+    '오늘 같은 방향'만으로 묶지 않는다. 시장 대비 초과로 움직였고(베타 제거),
+    잔차 상관이 임계 이상인 쌍만 이어서(union-find) 실제 그룹을 만든다.
+    상관이 임계 미만인 종목은 억지로 묶지 않고 그냥 제외한다."""
     hist = ctx["histories"]
-    moves, closes_by = {}, {}
+    mkt_rows = hist.get(MARKET, [])
+    cm = {r["date"]: r["close"] for r in mkt_rows if r.get("close")} or None
+    mkt_move = _today_move(mkt_rows) or 0.0
+
+    excess, closes_by = {}, {}
     for sym, rows in hist.items():
+        if _is_index(sym):
+            continue  # 지수는 종목의 합 — 테마가 아니다
         mv = _today_move(rows)
-        if mv is None or abs(mv) < MIN_MOVE_PCT:
+        if mv is None:
             continue
         if not any((r.get("volume") or 0) > 0 for r in rows):
             continue  # 금리·환율 등 비거래 자산 제외
-        moves[sym] = mv
+        ex = mv - mkt_move  # 시장 대비 초과 이동(%p)
+        if abs(ex) < MIN_MOVE_PCT:
+            continue
+        excess[sym] = ex
         closes_by[sym] = {r["date"]: r["close"] for r in rows if r.get("close")}
-    if len(moves) < MIN_CLUSTER:
+    if len(excess) < MIN_CLUSTER:
         return []
 
-    # 1차 그룹 = '오늘 같은 방향으로 크게 움직인 종목들'. 상관이 낮아도 묶는다 —
-    # 상관이 낮은데 오늘 같이 움직였다는 것 자체가 '새 그룹이 형성 중'이라는 신호다.
+    syms = sorted(excess)
+    dsu = _DSU(syms)
+    pair_corr = {}
+    for i in range(len(syms)):
+        for j in range(i + 1, len(syms)):
+            a, b = syms[i], syms[j]
+            if (excess[a] < 0) != (excess[b] < 0):
+                continue  # 오늘 반대로 움직였으면 같은 그룹일 수 없다
+            ra, rb = _pair_returns(closes_by[a], closes_by[b], cm)
+            if not ra:
+                continue
+            c = _corr(ra, rb)
+            if c is not None and c >= CORR_THRESHOLD:
+                dsu.union(a, b)
+                pair_corr[(a, b)] = c
+
+    groups = {}
+    for s in syms:
+        groups.setdefault(dsu.find(s), []).append(s)
+
     out = []
-    for direction in (-1, 1):
-        members = sorted([s for s, m in moves.items() if (m < 0) == (direction < 0)],
-                         key=lambda s: moves[s])
+    for members in groups.values():
         if len(members) < MIN_CLUSTER:
             continue
-        cs = []
-        for i in range(len(members)):
-            for j in range(i + 1, len(members)):
-                ra, rb = _pair_returns(closes_by[members[i]], closes_by[members[j]])
-                if not ra:
-                    continue
-                c = _corr(ra, rb)
-                if c is not None:
-                    cs.append(c)
-        avg_move = sum(moves[m] for m in members) / len(members)
-        avg_corr = sum(cs) / len(cs) if cs else 0.0
-        out.append((members, avg_move, avg_corr))
-    out.sort(key=lambda t: -abs(t[1]))
+        cs = [c for (a, b), c in pair_corr.items() if a in members and b in members]
+        if not cs:
+            continue
+        members.sort(key=lambda s: excess[s])
+        out.append((members, sum(excess[m] for m in members) / len(members),
+                    sum(cs) / len(cs)))
+    out.sort(key=lambda t: -t[2])
     return out[:MAX_REPORT]
 
 
 def _kind(avg_corr):
-    """평균 상관으로 그룹 성격 판별 — 새로 묶인 그룹이 오히려 중요한 신호."""
-    if avg_corr >= CORR_THRESHOLD:
-        return "기존 동조 그룹 (구조적 테마)"
-    if avg_corr >= 0.35:
-        return "동조 강화 중"
-    return "🆕 새로 묶인 그룹 — 기존 상관이 낮은데 오늘 함께 움직임 (새 내러티브 형성 가능)"
+    """묶인 그룹의 동조 강도. 임계 미만은 애초에 그룹이 되지 않는다."""
+    if avg_corr >= STRONG_CORR:
+        return "강한 동조, 사실상 한 몸으로 거래됨"
+    return "뚜렷한 동조, 같은 재료에 반응"
 
 
 def _today_of(ctx):
@@ -207,16 +254,17 @@ def run(ctx):
     if not clusters:
         return None
     lines = [f"### {TITLE}",
-             "(바스켓을 미리 정의하지 않고, 오늘 함께 크게 움직인 종목을 자동으로 묶었다. "
-             f"평균 상관은 최근 {CORR_WINDOW}일 기준 — 낮은데 함께 움직였다면 '새 그룹 형성'이다. "
+             "(바스켓을 미리 정의하지 않고 자동 감지. 시장(S&P) 대비 초과로 움직였고, "
+             f"최근 {CORR_WINDOW}일 '시장 요인을 뺀 잔차' 상관이 {CORR_THRESHOLD} 이상인 "
+             "종목만 묶는다 — 시장이 다 오른 날의 동반 상승은 관계가 아니라 베타이므로 제외된다. "
              "무슨 테마인지·왜 묶였는지는 뉴스와 대조해 해석할 것)"]
     cur = {}
     for members, avg, corr in clusters:
         names = ", ".join(ctx["names"].get(m, m) for m in members)
         tone = "동반 하락" if avg < 0 else "동반 상승"
         mark = "🚨" if avg <= -2 else ("🟢" if avg >= 2 else "•")
-        lines.append(f"- {mark} {len(members)}종목 {tone} 평균 {avg:+.1f}% "
-                     f"(평균 상관 {corr:.2f} — {_kind(corr)})")
+        lines.append(f"- {mark} {len(members)}종목 {tone} (시장 대비 평균 {avg:+.1f}%p, "
+                     f"잔차상관 {corr:.2f} — {_kind(corr)})")
         lines.append(f"  · {names}")
         cur["down" if avg < 0 else "up"] = list(members)
 
