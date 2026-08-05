@@ -150,6 +150,19 @@ def _plain(rich):
     return "".join(t.get("plain_text", "") for t in (rich or []))
 
 
+def _kst(iso: str) -> str:
+    """Notion의 created_time(UTC)을 한국시간으로. 파이프라인이 KST로 도는데
+    표시만 UTC면 9시간 어긋나 보여 어느 실행분인지 헷갈린다."""
+    if not iso:
+        return ""
+    from datetime import datetime, timedelta, timezone
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.astimezone(timezone(timedelta(hours=9))).strftime("%m-%d %H:%M")
+    except ValueError:
+        return iso[:16].replace("T", " ")
+
+
 def _blocks_to_text(page_id: str, limit_blocks: int = 300) -> str:
     """페이지 블록 → 읽기용 텍스트. 이미지·차트는 건너뛴다(토론엔 본문만 필요)."""
     out, cursor = [], None
@@ -229,7 +242,7 @@ def list_pages(title_contains: str = "", database_id: str = "", limit: int = 10)
             "title": _plain(props.get("title")) or "(제목 없음)",
             "id": page["id"],
             "url": page.get("url", ""),
-            "created": (page.get("created_time") or "")[:16].replace("T", " "),
+            "created": _kst(page.get("created_time") or ""),
         })
     return out
 
