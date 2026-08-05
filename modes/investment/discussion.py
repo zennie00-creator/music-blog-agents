@@ -35,6 +35,10 @@ SOURCE_RULE = """
 - '질문에 맞춰 방금 검색한 자료'가 주어지면 그것을 우선 근거로 삼으세요 —
   브리핑에 없는 질문일수록 이쪽에 답이 있습니다. 기사 제목의 사실만 쓰고,
   본문을 읽은 것처럼 세부를 지어내지 마세요.
+- 분기 재무 표(SEC EDGAR)가 있으면 추세를 직접 읽어 답하세요 — 전분기·1년 전 대비
+  어떻게 변했는지 수치로 비교하고, 한 분기 값만 보고 단정하지 마세요.
+  단, 표의 마진은 GAAP 영업마진이라 보도되는 adjusted·FCF 기준과 다를 수 있음을
+  전제하고, 그 차이가 중요한 질문이면 그 점을 밝히세요.
 - 답변 맨 끝에 '---' 한 줄을 긋고 각주 목록을 답니다. 형식:
   [1] 브리핑 · 동적 클러스터
   [2] 검색 자료 · "Palantir beats estimates" (CNBC)
@@ -215,11 +219,20 @@ def search_for_question(question: str, per_term: int = 5) -> str:
             continue
         if items:
             groups.append(_render_group(t, items))
-    if not groups:
-        return ""
-    return ("아래는 이 질문에 맞춰 방금 검색한 기사 헤드라인입니다"
-            " (Google News, 최근 3주). 답변에 쓸 때는 매체명을 출처로 밝히세요:\n\n"
-            + "\n\n".join(groups))
+    news_md = ""
+    if groups:
+        news_md = ("아래는 이 질문에 맞춰 방금 검색한 기사 헤드라인입니다"
+                   " (Google News, 최근 3주). 답변에 쓸 때는 매체명을 출처로 밝히세요:\n\n"
+                   + "\n\n".join(groups))
+
+    # 뉴스는 '무슨 일이 있었나'만 답한다. '숫자가 어떻게 변해왔나'는 공시로 본다.
+    try:
+        from modes.investment import fundamentals
+        fin_md = fundamentals.context_for(question)
+    except Exception as e:
+        print(f"  ⚠️ 재무 시계열 조회 실패: {e}")
+        fin_md = ""
+    return "\n\n".join(x for x in (fin_md, news_md) if x)
 
 
 def _research(prompt: str):
