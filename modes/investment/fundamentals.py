@@ -16,9 +16,12 @@ import re
 
 import requests
 
-# SEC 정책상 User-Agent에 식별 가능한 연락처가 있어야 한다.
-_UA = {"User-Agent": "invest-journal-bot (personal research; contact via github)",
-       "Accept-Encoding": "gzip, deflate"}
+# SEC 정책상 User-Agent에 '이름 + 이메일' 형식의 연락처가 있어야 하고,
+# 형식이 어긋나면 403을 준다. SEC_CONTACT로 실제 이메일을 넣을 수 있다.
+import os as _os
+
+_CONTACT = _os.environ.get("SEC_CONTACT", "invest-journal-bot bot@example.com")
+_UA = {"User-Agent": _CONTACT, "Accept-Encoding": "gzip, deflate"}
 
 _TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _CONCEPT = "https://data.sec.gov/api/xbrl/companyconcept/CIK{cik}/us-gaap/{tag}.json"
@@ -48,13 +51,19 @@ def _cik(ticker: str):
 
 def _concept(cik: str, tags):
     """태그 후보를 순서대로 시도해 분기 값 목록을 얻는다 → [{end, val, fy, fp}]."""
+    last = ""
     for tag in tags:
         try:
             r = requests.get(_CONCEPT.format(cik=cik, tag=tag), headers=_UA, timeout=15)
             if not r.ok:
+                # 403은 대개 User-Agent 정책 위반 — 조용히 넘기면 원인을 못 찾는다
+                last = f"{tag}: HTTP {r.status_code}"
+                if r.status_code == 403:
+                    print(f"  🔻 SEC 403 (User-Agent 정책 확인 필요): {r.text[:100]}")
                 continue
             units = r.json().get("units", {}).get("USD", [])
-        except Exception:
+        except Exception as e:
+            last = f"{tag}: {type(e).__name__}"
             continue
         # 분기(약 3개월) 데이터만: start~end 간격으로 판별, 10-Q/10-K 원본만
         rows = []
@@ -74,6 +83,8 @@ def _concept(cik: str, tags):
             for r_ in sorted(rows, key=lambda x: x["end"]):
                 dedup[r_["end"]] = r_
             return sorted(dedup.values(), key=lambda x: x["end"])
+    if last:
+        print(f"  ⚠️ SEC 지표 없음 ({last})")
     return []
 
 
