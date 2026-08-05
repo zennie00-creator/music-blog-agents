@@ -146,6 +146,121 @@ def _append_chart_images(page_id: str, image_specs):
         _append_blocks(page_id, blocks)
 
 
+def _plain(rich):
+    return "".join(t.get("plain_text", "") for t in (rich or []))
+
+
+def _kst(iso: str) -> str:
+    """Notion의 created_time(UTC)을 한국시간으로. 파이프라인이 KST로 도는데
+    표시만 UTC면 9시간 어긋나 보여 어느 실행분인지 헷갈린다."""
+    if not iso:
+        return ""
+    from datetime import datetime, timedelta, timezone
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return dt.astimezone(timezone(timedelta(hours=9))).strftime("%m-%d %H:%M")
+    except ValueError:
+        return iso[:16].replace("T", " ")
+
+
+def _blocks_to_text(page_id: str, limit_blocks: int = 300) -> str:
+    """페이지 블록 → 읽기용 텍스트. 이미지·차트는 건너뛴다(토론엔 본문만 필요)."""
+    out, cursor = [], None
+    url = f"{_API}/blocks/{page_id}/children"
+    while len(out) < limit_blocks:
+        q = f"{url}?page_size=100" + (f"&start_cursor={cursor}" if cursor else "")
+        r = requests.get(q, headers=_headers(), timeout=30)
+        if not r.ok:
+            break
+        data = r.json()
+        for b in data.get("results", []):
+            t = b.get("type", "")
+            body = b.get(t, {}) or {}
+            text = _plain(body.get("rich_text"))
+            if t == "heading_1":
+                out.append(f"# {text}")
+            elif t == "heading_2":
+                out.append(f"## {text}")
+            elif t == "heading_3":
+                out.append(f"### {text}")
+            elif t == "bulleted_list_item":
+                out.append(f"- {text}")
+            elif t == "quote":
+                out.append(f"> {text}")
+            elif t == "divider":
+                out.append("---")
+            elif text:
+                out.append(text)
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return "\n".join(out)
+
+
+def list_databases(limit: int = 25):
+    """통합이 접근 가능한 데이터베이스 목록 → [{title, id}].
+
+    DB ID는 Notion URL에서 눈으로 뽑아야 해서 틀리기 쉽다. 키만 있으면
+    앱이 목록을 보여주고 고르게 할 수 있다."""
+    r = requests.post(f"{_API}/search", headers=_headers(),
+                      json={"filter": {"property": "object", "value": "database"},
+                            "page_size": max(1, min(limit, 100))}, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"Notion 검색 실패 {r.status_code}: {r.text[:200]}")
+    out = []
+    for db in r.json().get("results", []):
+        title = _plain(db.get("title")) or "(제목 없음)"
+        out.append({"title": title, "id": db.get("id", "")})
+    return out
+
+
+def list_pages(title_contains: str = "", database_id: str = "", limit: int = 10):
+    """DB의 페이지 목록 → [{title, id, url, created}] (최신순).
+
+    title_contains가 비면 필터 없이 최근 것을 돌려준다 — 제목이 예상과 다를 때
+    실제로 무엇이 있는지 보여주기 위함이다."""
+    database_id = database_id or config.NOTION_DATABASE_ID
+    if not database_id:
+        # 조용히 빈 목록을 주면 '검색 결과 없음'과 구분되지 않아 원인을 못 찾는다.
+        raise RuntimeError("NOTION_DATABASE_ID가 설정되지 않았습니다")
+    title_prop = _title_property_name(database_id)
+    payload = {
+        "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+        "page_size": max(1, min(limit, 100)),
+    }
+    if title_contains:
+        payload["filter"] = {"property": title_prop,
+                             "title": {"contains": title_contains}}
+    r = requests.post(f"{_API}/databases/{database_id}/query",
+                      headers=_headers(), json=payload, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"Notion 조회 실패 {r.status_code}: {r.text[:200]}")
+    out = []
+    for page in r.json().get("results", []):
+        props = page.get("properties", {}).get(title_prop, {})
+        out.append({
+            "title": _plain(props.get("title")) or "(제목 없음)",
+            "id": page["id"],
+            "url": page.get("url", ""),
+            "created": _kst(page.get("created_time") or ""),
+        })
+    return out
+
+
+def read_page(page_id: str) -> str:
+    """페이지 본문을 읽기용 텍스트로."""
+    return _blocks_to_text(page_id)
+
+
+def fetch_page_by_title(title_contains: str, database_id: str = "") -> tuple:
+    """제목에 문자열이 포함된 최신 페이지 → (제목, 본문텍스트, url). 없으면 ("","","")."""
+    pages = list_pages(title_contains, database_id, limit=1)
+    if not pages:
+        return "", "", ""
+    p = pages[0]
+    return p["title"], _blocks_to_text(p["id"]), p["url"]
+
+
 def _title_property_name(database_id: str) -> str:
     """데이터베이스의 title 속성 이름을 조회 (DB마다 '이름'/'Name' 등 제각각)."""
     r = requests.get(f"{_API}/databases/{database_id}", headers=_headers(), timeout=30)

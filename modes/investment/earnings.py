@@ -32,10 +32,12 @@ NAME_MAP = {
     "JOBY": "Joby Aviation",
     "MSTR": "MicroStrategy",
     "COIN": "Coinbase",
+    "SPCX": "SpaceX",  # 티커보다 회사명으로 검색해야 실적 보도가 잡힌다
 }
 
-# 실적이 없는 상품(ETF·SPAC·원자재 등) — 워치리스트에 있어도 '어닝' 대상에선 제외.
-NO_EARNINGS = {"IBIT", "SPCX", "USO", "BTCUSD"}
+# 실적이 없는 상품(ETF·원자재 등) — 워치리스트에 있어도 '어닝' 대상에선 제외.
+# SPCX는 실적을 발표하는 종목이라 제외 대상이 아니다.
+NO_EARNINGS = {"IBIT", "USO", "BTCUSD"}
 
 # 지수·금리·환율 심볼에 공통으로 들어가는 토큰 — 개별 종목이 아니므로 제외.
 _NON_EQUITY_TOKENS = ("INDEX", "CURRENCY", "KOSPI", "KRW")
@@ -145,7 +147,15 @@ def _news_rss(query: str, when: str = "3d", timeout: int = 6):
 
 
 def _render_group(label: str, items) -> str:
-    lines = [f"**{label}**"] + [f"- {it['title']}" for it in items]
+    """헤드라인 목록. 매체명이 있으면 붙인다 — 브리핑에 남아야 토론·일지에서
+    출처로 인용할 수 있다. 제목에 이미 매체명이 들어 있으면 중복 표기하지 않는다."""
+    lines = [f"**{label}**"]
+    for it in items:
+        title = it["title"]
+        src = (it.get("source") or "").strip()
+        if src and src.lower() not in title.lower():
+            title = f"{title} ({src})"
+        lines.append(f"- {title}")
     return "\n".join(lines)
 
 

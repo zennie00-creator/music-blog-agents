@@ -3,6 +3,15 @@ import os, sys
 from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.dirname(__file__))
 
+# Streamlit Secrets를 환경변수로 옮긴다 — core/config는 os.environ만 읽고,
+# 모듈 로드 시점에 값을 확정하므로 반드시 다른 import보다 먼저 해야 한다.
+try:
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str):
+            os.environ.setdefault(_k, _v)
+except Exception:
+    pass  # secrets.toml이 없는 로컬 실행
+
 import music_flow
 import workout_flow
 import devlog_flow
@@ -12,8 +21,15 @@ import notion_agent
 from core import profile as profile_store
 from core import draft
 
-# 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도)
-APP_VERSION = "2026-08-02 · v23 (코치 인사이트 로그 — 다른 코치 분석을 날짜별 원문으로)"
+# 배포 버전 표시 (재부팅으로 최신 코드가 반영됐는지 눈으로 확인하는 용도).
+# 모드마다 따로 적는다 — 하나로 합치면 방금 고친 게 어느 모드인지 알 수 없다.
+APP_VERSION = "2026-08-05 · v23"
+MODE_VERSIONS = {
+    "music":   "음악 v6 — 곡 선택·에세이 단계 진행",
+    "workout": "운동 v23 — 코치 인사이트 로그·다른 코치 분석 원문 축적",
+    "devlog":  "개발 v8 — 개발 메모 정리·이미지 발행",
+    "invest":  "투자 v1 — 브리핑 토론·일지 발행 (신규)",
+}
 
 # ── 페이지 설정 ──────────────────────────────────────────
 st.set_page_config(page_title="일지 에이전트", page_icon="📔", layout="centered")
@@ -145,6 +161,17 @@ DEFAULTS = {
     "wk_after": "",
     "wk_analysis": "",
     "wk_blog": "",
+    # 투자 토론 모드
+    "iv_unlocked": False,   # 비밀번호 게이트 (public 앱이므로 필수)
+    "iv_brief": "",         # Notion에서 읽어온 오늘 브리핑
+    "iv_brief_title": "",
+    "iv_brief_url": "",
+    "iv_messages": [],      # [(발언자, 내용)]
+    "iv_memo": "",
+    "iv_candidates": [],    # 날짜로 찾은 브리핑 후보 (여러 번 발행 시 선택)
+    "iv_fallback": [],      # 못 찾았을 때 보여줄 DB 최근 목록
+    "iv_db_id": "",         # Secrets에 DB ID가 없을 때 앱에서 고른 값
+    "iv_sources": [],       # 질문별 참고 자료 누적 [{q, md}] (근거를 되짚기 위함)
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -196,7 +223,9 @@ def _stored_insights():
 
 
 with st.sidebar:
-    st.caption(f"🟢 버전 {APP_VERSION}")
+    # 홈에선 앱 버전, 모드 안에선 그 모드의 버전을 보여준다
+    _mv = MODE_VERSIONS.get(st.session_state.mode) if st.session_state.mode else None
+    st.caption(f"🟢 {_mv}" if _mv else f"🟢 앱 {APP_VERSION}")
     if st.session_state.mode:
         if st.button("← 모드 다시 선택", use_container_width=True):
             st.session_state.mode = None
@@ -398,8 +427,9 @@ if st.session_state.mode is None:
         ("music",   "음악 감상", "분위기를 고르면, 곡과 함께 짧은 에세이를 씁니다", 0),
         ("workout", "오늘 운동", "기록과 몸 상태를 더해 운동 일지를 남깁니다", "w0"),
         ("devlog",  "개발 일지", "오늘 만든 것을 담백하게 정리한 기록으로 남깁니다", "d0"),
+        ("invest",  "투자 토론", "오늘 브리핑을 놓고 토론하고, 그대로 일지를 남깁니다", "i0"),
     )
-    for col, (mode_key, title, desc, first_step) in zip(st.columns(3), _MODES):
+    for col, (mode_key, title, desc, first_step) in zip(st.columns(len(_MODES)), _MODES):
         with col:
             st.markdown(f'<div class="mode-card"><div class="mode-title">{title}</div>'
                         f'<div class="mode-desc">{desc}</div></div>',
@@ -435,3 +465,14 @@ elif st.session_state.mode == "devlog":
     st.caption("개발 메모를 정리해 이미지와 함께 Notion에 발행합니다.")
     st.divider()
     devlog_flow.run()
+
+# ══════════════════════════════════════════════════════════
+# 투자 토론 모드
+# ══════════════════════════════════════════════════════════
+elif st.session_state.mode == "invest":
+    from modes.investment import app_flow as invest_flow
+
+    st.title("투자 토론")
+    st.caption("오늘 모닝 브리핑을 불러와 토론하고, 그 결론으로 투자 일지를 남깁니다.")
+    st.divider()
+    invest_flow.run()

@@ -63,4 +63,10 @@ def run(ctx):
             continue
         found = True
         lines.append(f"- {name}: {st['label']}")
+        # 어떤 종목으로 구성된 바스켓인지 명기 — 이름만 보고는 범위를 알 수 없다.
+        # (이력이 없어 판정에서 빠진 종목은 표시하지 않는다)
+        members = [ctx["names"].get(s, s) for s in syms
+                   if _ret(ctx["histories"].get(s, [])) is not None]
+        if members:
+            lines.append(f"  · 구성({len(members)}): {', '.join(members)}")
     return "\n".join(lines) if found else None
