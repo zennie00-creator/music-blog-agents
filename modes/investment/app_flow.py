@@ -70,12 +70,18 @@ def _context(found: str = "") -> str:
 def _round(question: str):
     """한 라운드: 리서치 발언 → 비판적 검토."""
     st.session_state.iv_messages.append(("나", question))
-    # 브리핑 밖 질문에도 답할 수 있게, 질문에 맞는 기사를 새로 찾아 근거에 더한다
+    # 브리핑 밖 질문에도 답할 수 있게, 질문에 맞는 기사·공시를 새로 찾아 근거에 더한다
     with st.spinner("질문에 맞는 자료 검색 중..."):
         try:
             found = discussion.search_for_question(question)
-        except Exception:
+        except Exception as e:
             found = ""
+            st.warning(f"자료 검색 실패 — 브리핑 근거로만 답합니다: {e}")
+    # 무엇을 근거로 답했는지 보이게 한다. 수집이 실패해도 화면에서 바로 드러난다.
+    st.session_state.iv_sources = found
+    if not found:
+        st.info("이번 질문에 대해 외부 자료(공시·기사)를 찾지 못했습니다 — "
+                "브리핑·전제 범위에서만 답합니다.")
     ctx = _context(found)
     with st.spinner("리서치 분석 중..."):
         try:
@@ -227,6 +233,10 @@ def run():
     st.subheader("토론")
     if not st.session_state.iv_brief:
         st.caption("브리핑을 먼저 불러오면 신호·클러스터·뉴스를 공유한 상태로 토론합니다.")
+
+    if st.session_state.get("iv_sources"):
+        with st.expander("직전 답변이 참고한 자료 (공시·기사)"):
+            st.markdown(st.session_state.iv_sources)
 
     for speaker, text in st.session_state.iv_messages:
         with st.chat_message("user" if speaker == "나" else "assistant"):
