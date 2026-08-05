@@ -147,7 +147,15 @@ def _news_rss(query: str, when: str = "3d", timeout: int = 6):
 
 
 def _render_group(label: str, items) -> str:
-    lines = [f"**{label}**"] + [f"- {it['title']}" for it in items]
+    """헤드라인 목록. 매체명이 있으면 붙인다 — 브리핑에 남아야 토론·일지에서
+    출처로 인용할 수 있다. 제목에 이미 매체명이 들어 있으면 중복 표기하지 않는다."""
+    lines = [f"**{label}**"]
+    for it in items:
+        title = it["title"]
+        src = (it.get("source") or "").strip()
+        if src and src.lower() not in title.lower():
+            title = f"{title} ({src})"
+        lines.append(f"- {title}")
     return "\n".join(lines)
 
 
