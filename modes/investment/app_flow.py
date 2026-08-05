@@ -191,9 +191,9 @@ def run():
     cands = st.session_state.get("iv_candidates") or []
     if cands:
         # 하루에 여러 번 발행됐을 수 있다 → 고르게 한다 (기본값은 가장 최근 것)
-        labels = [f"{c['created']} · {c['title']}" for c in cands]
+        labels = [f"{c['created']} KST · {c['title']}" for c in cands]
         idx = 0 if len(cands) == 1 else st.selectbox(
-            f"{len(cands)}건 발견 — 어느 것을 쓸까요",
+            f"{len(cands)}건 발견 — 어느 것을 쓸까요 (발행 시각 KST)",
             range(len(cands)), format_func=lambda i: labels[i])
         if st.button("이 페이지 불러오기", type="primary"):
             with st.spinner("본문 읽는 중..."):
@@ -209,7 +209,7 @@ def run():
         st.warning(f"{day} 제목의 페이지가 없습니다. DB의 최근 페이지는 이렇습니다 — "
                    "제목 형식이 다르거나 다른 DB일 수 있습니다.")
         for c in fb:
-            st.caption(f"· {c['created']} · {c['title']}")
+            st.caption(f"· {c['created']} KST · {c['title']}")
 
     if st.session_state.iv_brief:
         with st.expander("오늘의 브리핑", expanded=not st.session_state.iv_messages):
