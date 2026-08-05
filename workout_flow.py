@@ -23,7 +23,7 @@ DRAFT_KEYS = ("wk_workouts", "wk_recovery", "wk_cycle", "wk_selected_list",
               "wk_summary", "wk_before", "wk_body", "wk_after", "wk_analysis",
               "wk_blog", "wk_blog_prev", "wk_trend", "wk_coach_notes",
               "wk_whoop_note", "wk_saved_html", "wk_notion_url", "wk_style_fb",
-              "wk_is_today", "wk_coach_log")
+              "wk_is_today", "wk_coach_log", "wk_insights")
 
 
 def _save_draft():
@@ -357,6 +357,12 @@ def run():
             logs = notion_agent.load_coach_logs()
             st.session_state.wk_coach_log = workout_agent.format_coach_log(logs)
 
+        # 다른 코치가 준 분석의 '원문'도 최신 몇 편만 함께(네트워크 1회 · 캐시).
+        # 훈련 노트가 증류하며 잃은 뉘앙스를 코치가 직접 읽게 하는 통로다.
+        if "wk_insights" not in st.session_state:
+            st.session_state.wk_insights = coach_agent.format_insights(
+                notion_agent.load_insights())
+
         st.markdown('<div class="section-label">오늘의 운동 데이터</div>', unsafe_allow_html=True)
         st.markdown(f'<div class="content-box">{st.session_state.wk_summary}</div>',
                     unsafe_allow_html=True)
@@ -376,6 +382,7 @@ def run():
                     framework=prof.get("coach_framework", ""),
                     trend=st.session_state.get("wk_trend", ""),
                     coach_log=st.session_state.get("wk_coach_log", ""),
+                    insights=st.session_state.get("wk_insights", ""),
                     user_note=st.session_state.get("wk_coach_notes") or "",
                     whoop_note=st.session_state.get("wk_whoop_note") or "")
             st.rerun()
@@ -416,6 +423,7 @@ def run():
                         framework=prof.get("coach_framework", ""),
                         trend=st.session_state.get("wk_trend", ""),
                         coach_log=st.session_state.get("wk_coach_log", ""),
+                        insights=st.session_state.get("wk_insights", ""),
                         user_note=st.session_state.get("wk_coach_notes", ""),
                         whoop_note=st.session_state.wk_whoop_note)
                 st.rerun()
@@ -782,7 +790,7 @@ def _reset():
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
               "wk_coach_notes", "wk_whoop_note", "wk_style_fb",
-              "wk_is_today", "wk_coach_log", "wk_coachlog_saved"):
+              "wk_is_today", "wk_coach_log", "wk_insights", "wk_coachlog_saved"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
