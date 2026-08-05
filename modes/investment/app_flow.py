@@ -51,11 +51,13 @@ def _load_page(page: dict):
     st.session_state.iv_brief_url = page.get("url", "")
 
 
-def _context() -> str:
+def _context(found: str = "") -> str:
     parts = []
     thesis = load_thesis()
     if thesis.strip():
         parts.append(f"[투자자의 장기 전제]\n{thesis.strip()}")
+    if found.strip():
+        parts.append(f"[질문에 맞춰 방금 검색한 자료]\n{found.strip()}")
     if st.session_state.iv_brief:
         parts.append("[오늘의 모닝 브리핑 — 이 내용을 전제로 토론한다]\n"
                      + st.session_state.iv_brief)
@@ -68,7 +70,13 @@ def _context() -> str:
 def _round(question: str):
     """한 라운드: 리서치 발언 → 비판적 검토."""
     st.session_state.iv_messages.append(("나", question))
-    ctx = _context()
+    # 브리핑 밖 질문에도 답할 수 있게, 질문에 맞는 기사를 새로 찾아 근거에 더한다
+    with st.spinner("질문에 맞는 자료 검색 중..."):
+        try:
+            found = discussion.search_for_question(question)
+        except Exception:
+            found = ""
+    ctx = _context(found)
     with st.spinner("리서치 분석 중..."):
         try:
             who, ans = discussion._research(
@@ -80,7 +88,7 @@ def _round(question: str):
         try:
             review = ask_claude(
                 discussion.CLAUDE_SYSTEM,
-                f"{_context()}\n\n위 {who}의 마지막 분석을 검토하세요.",
+                f"{_context(found)}\n\n위 {who}의 마지막 분석을 검토하세요.",
                 max_tokens=2048)
         except Exception as e:
             review = f"(검토 실패: {e})"
