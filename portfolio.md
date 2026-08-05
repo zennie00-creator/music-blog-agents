@@ -28,7 +28,7 @@ gsheet/KRX:KOSPI: 코스피
 gsheet/INDEXCBOE:VIX: VIX
 
 ## 에너지 (매크로)
-gsheet/NYSEARCA:USO: WTI 원유(USO)
+gsheet/NYSEARCA:USO: 원유 ETF(USO·WTI 추종)
 
 ## 섹터
 gsheet/INDEXNASDAQ:SOX: 필라델피아 반도체
@@ -54,7 +54,7 @@ gsheet/NASDAQ:AAPL: 애플
 gsheet/NASDAQ:MSFT: 마이크로소프트
 gsheet/NASDAQ:GOOGL: 알파벳
 gsheet/NASDAQ:TSLA: 테슬라
-gsheet/PLTR: 팔란티어
+gsheet/PLTR: 팔란티어 @gsheet/INDEXNASDAQ:NDX
 gsheet/NYSE:JOBY: 조비 에비에이션
 gsheet/NASDAQ:MSTR: 마이크로스트래티지
 gsheet/NASDAQ:COIN: 코인베이스
