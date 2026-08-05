@@ -184,6 +184,23 @@ def _blocks_to_text(page_id: str, limit_blocks: int = 300) -> str:
     return "\n".join(out)
 
 
+def list_databases(limit: int = 25):
+    """통합이 접근 가능한 데이터베이스 목록 → [{title, id}].
+
+    DB ID는 Notion URL에서 눈으로 뽑아야 해서 틀리기 쉽다. 키만 있으면
+    앱이 목록을 보여주고 고르게 할 수 있다."""
+    r = requests.post(f"{_API}/search", headers=_headers(),
+                      json={"filter": {"property": "object", "value": "database"},
+                            "page_size": max(1, min(limit, 100))}, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"Notion 검색 실패 {r.status_code}: {r.text[:200]}")
+    out = []
+    for db in r.json().get("results", []):
+        title = _plain(db.get("title")) or "(제목 없음)"
+        out.append({"title": title, "id": db.get("id", "")})
+    return out
+
+
 def list_pages(title_contains: str = "", database_id: str = "", limit: int = 10):
     """DB의 페이지 목록 → [{title, id, url, created}] (최신순).
 
