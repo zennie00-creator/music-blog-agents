@@ -59,7 +59,9 @@ def _parse_html(text):
     out = {}
     for label, key in (("total", "total_ratio"), ("index", "index_ratio"),
                        ("equity", "equity_ratio")):
-        m = re.search(rf"{label}[^<>]{{0,40}}?put[/\s]*call[^<>]{{0,40}}?"
+        # 라벨과 숫자 사이에는 보통 태그가 낀다("...Ratio</span><span>0.93").
+        # 태그를 못 넘는 [^<>] 대신 '숫자가 아닌 문자'로 건너뛴다.
+        m = re.search(rf"{label}\s*put\s*[/\s-]*\s*call[^0-9]{{0,120}}?"
                       r"(\d\.\d{2})", text, re.I | re.S)
         if m:
             v = float(m.group(1))
@@ -83,6 +85,14 @@ def fetch():
                 print(f"  ✅ Put/Call 소스 확보: {url.split('//')[-1][:60]}")
                 return ratios, None
             last_err = f"{url.split('//')[-1][:50]}: 200이지만 비율을 찾지 못함"
+            # 200인데 못 찾았다면 원인이 둘이다 — 마크업이 예상과 다르거나(파서 문제),
+            # 값을 JS가 채우거나(requests로는 불가). 판별하려면 실물을 봐야 하므로
+            # put/call 주변만 발췌해 로그에 남긴다.
+            if "cboe.com" in url and "put" in body.lower():
+                import re as _re
+                snips = _re.findall(r".{40}put[/\s-]*call.{60}", body, _re.I | _re.S)[:2]
+                for s in snips:
+                    print(f"     ↳ 발췌: {' '.join(s.split())[:150]}")
         except Exception as e:
             last_err = f"{url.split('//')[-1][:50]}: {type(e).__name__} {str(e)[:60]}"
     return {}, last_err

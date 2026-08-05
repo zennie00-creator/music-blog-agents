@@ -152,6 +152,8 @@ DEFAULTS = {
     "iv_brief_url": "",
     "iv_messages": [],      # [(발언자, 내용)]
     "iv_memo": "",
+    "iv_candidates": [],    # 날짜로 찾은 브리핑 후보 (여러 번 발행 시 선택)
+    "iv_fallback": [],      # 못 찾았을 때 보여줄 DB 최근 목록
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
