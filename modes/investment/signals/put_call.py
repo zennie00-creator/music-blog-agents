@@ -59,7 +59,9 @@ def _parse_html(text):
     out = {}
     for label, key in (("total", "total_ratio"), ("index", "index_ratio"),
                        ("equity", "equity_ratio")):
-        m = re.search(rf"{label}[^<>]{{0,40}}?put[/\s]*call[^<>]{{0,40}}?"
+        # 라벨과 숫자 사이에는 보통 태그가 낀다("...Ratio</span><span>0.93").
+        # 태그를 못 넘는 [^<>] 대신 '숫자가 아닌 문자'로 건너뛴다.
+        m = re.search(rf"{label}\s*put\s*[/\s-]*\s*call[^0-9]{{0,120}}?"
                       r"(\d\.\d{2})", text, re.I | re.S)
         if m:
             v = float(m.group(1))
