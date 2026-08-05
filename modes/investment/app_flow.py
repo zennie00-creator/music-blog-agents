@@ -106,8 +106,27 @@ def _publish_journal(memo: str, publish: bool):
     return journal, url
 
 
+def _config_ok() -> bool:
+    """필요한 키가 있는지 먼저 보여준다 — 없으면 조회가 조용히 실패해 원인을 못 찾는다."""
+    need = {"NOTION_API_KEY": "브리핑 읽기·일지 발행",
+            "NOTION_DATABASE_ID": "투자 일지 DB",
+            "ANTHROPIC_API_KEY": "토론·일지 작성"}
+    missing = [k for k in need if not os.environ.get(k)]
+    if missing:
+        st.error("설정이 빠져 있어 진행할 수 없습니다: "
+                 + ", ".join(f"`{k}`({need[k]})" for k in missing))
+        st.caption("Streamlit Cloud → Manage app → Settings → Secrets 에 추가한 뒤 "
+                   "앱이 재시작되면 사라집니다.")
+        return False
+    if not os.environ.get("XAI_API_KEY"):
+        st.caption("ℹ️ XAI_API_KEY 없음 — 리서치 역할은 Claude가 대행합니다.")
+    return True
+
+
 def run():
     if not _password_ok():
+        return
+    if not _config_ok():
         return
 
     day = st.date_input("날짜", value=_date.today()).isoformat()

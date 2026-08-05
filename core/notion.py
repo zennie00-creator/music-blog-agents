@@ -191,7 +191,8 @@ def list_pages(title_contains: str = "", database_id: str = "", limit: int = 10)
     실제로 무엇이 있는지 보여주기 위함이다."""
     database_id = database_id or config.NOTION_DATABASE_ID
     if not database_id:
-        return []
+        # 조용히 빈 목록을 주면 '검색 결과 없음'과 구분되지 않아 원인을 못 찾는다.
+        raise RuntimeError("NOTION_DATABASE_ID가 설정되지 않았습니다")
     title_prop = _title_property_name(database_id)
     payload = {
         "sorts": [{"timestamp": "created_time", "direction": "descending"}],
