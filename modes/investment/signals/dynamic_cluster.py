@@ -224,6 +224,59 @@ def _save(today, groups):
         f.write("\n".join(lines) + "\n")
 
 
+PROMOTE_LOOKBACK = 10   # 최근 며칠을 볼지
+PROMOTE_MIN_DAYS = 6    # 그 중 며칠 이상 함께 잡히면 '지속 그룹'으로 본다
+PROMOTE_MIN_SIZE = 3
+
+
+def promotion_candidates(ctx, today):
+    """여러 날 반복해서 함께 묶인 핵심 멤버 → 정식 바스켓 승격 후보.
+
+    하루치 클러스터는 그날의 사건일 수 있다. 최근 N일 중 M일 이상 계속 같이
+    잡힌 종목들만 '구조적 그룹'으로 보고 제안한다. 자동 등록은 하지 않는다 —
+    바스켓 등록은 코드 변경이고, 일시적 그룹이 굳어지면 오히려 해롭다."""
+    from collections import Counter
+    if not os.path.exists(_STORE):
+        return []
+    recs = []
+    with open(_STORE, encoding="utf-8") as f:
+        for ln in f:
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                rec = json.loads(ln)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("date") and rec["date"] <= today:
+                recs.append(rec)
+    recs = sorted(recs, key=lambda r: r["date"])[-PROMOTE_LOOKBACK:]
+    if len(recs) < PROMOTE_MIN_DAYS:
+        return []
+
+    # 이미 정식 바스켓에 있는 종목 조합은 제안하지 않는다
+    try:
+        from modes.investment.signals.theme_breadth import BASKETS
+        known = [set(syms) for _, syms in BASKETS]
+    except Exception:
+        known = []
+
+    out = []
+    for key in ("down", "up"):
+        cnt = Counter()
+        for rec in recs:
+            for s in rec.get("groups", {}).get(key, []):
+                cnt[s] += 1
+        core = sorted([s for s, c in cnt.items() if c >= PROMOTE_MIN_DAYS])
+        if len(core) < PROMOTE_MIN_SIZE:
+            continue
+        cs = set(core)
+        if any(cs <= k for k in known):
+            continue  # 기존 바스켓의 부분집합 → 새로울 게 없다
+        out.append((key, core, len(recs)))
+    return out
+
+
 def _change_note(ctx, prev_date, prev, cur):
     """어제 대비 구성 변화 코멘트. 변화가 없으면 None."""
     if not prev_date:
@@ -277,6 +330,12 @@ def run(ctx):
             if note:
                 lines.append(note)
             _save(today, cur)
+            # 며칠째 반복되는 조합은 정식 바스켓 후보로 제안 (등록은 사람이 결정)
+            for key, core, days in promotion_candidates(ctx, today):
+                names = ", ".join(ctx["names"].get(s, s) for s in core)
+                tone = "하락" if key == "down" else "상승"
+                lines.append(f"- 📌 바스켓 승격 후보 — 최근 {days}일 중 "
+                             f"{PROMOTE_MIN_DAYS}일 이상 함께 {tone}한 {len(core)}종목: {names}")
         except Exception as e:
             print(f"  ⚠️ 클러스터 변화 비교 실패 (건너뜀): {e}")
     return "\n".join(lines)

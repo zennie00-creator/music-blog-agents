@@ -146,6 +146,71 @@ def _append_chart_images(page_id: str, image_specs):
         _append_blocks(page_id, blocks)
 
 
+def _plain(rich):
+    return "".join(t.get("plain_text", "") for t in (rich or []))
+
+
+def _blocks_to_text(page_id: str, limit_blocks: int = 300) -> str:
+    """페이지 블록 → 읽기용 텍스트. 이미지·차트는 건너뛴다(토론엔 본문만 필요)."""
+    out, cursor = [], None
+    url = f"{_API}/blocks/{page_id}/children"
+    while len(out) < limit_blocks:
+        q = f"{url}?page_size=100" + (f"&start_cursor={cursor}" if cursor else "")
+        r = requests.get(q, headers=_headers(), timeout=30)
+        if not r.ok:
+            break
+        data = r.json()
+        for b in data.get("results", []):
+            t = b.get("type", "")
+            body = b.get(t, {}) or {}
+            text = _plain(body.get("rich_text"))
+            if t == "heading_1":
+                out.append(f"# {text}")
+            elif t == "heading_2":
+                out.append(f"## {text}")
+            elif t == "heading_3":
+                out.append(f"### {text}")
+            elif t == "bulleted_list_item":
+                out.append(f"- {text}")
+            elif t == "quote":
+                out.append(f"> {text}")
+            elif t == "divider":
+                out.append("---")
+            elif text:
+                out.append(text)
+        if not data.get("has_more"):
+            break
+        cursor = data.get("next_cursor")
+    return "\n".join(out)
+
+
+def fetch_page_by_title(title_contains: str, database_id: str = "") -> tuple:
+    """DB에서 제목에 문자열이 포함된 最新 페이지를 찾아 (제목, 본문텍스트, url).
+
+    발행된 Notion 페이지가 곧 단일 진실이므로, 앱은 이걸 그대로 읽어 쓴다.
+    찾지 못하면 ("", "", "")."""
+    database_id = database_id or config.NOTION_DATABASE_ID
+    if not database_id:
+        return "", "", ""
+    title_prop = _title_property_name(database_id)
+    payload = {
+        "filter": {"property": title_prop, "title": {"contains": title_contains}},
+        "sorts": [{"timestamp": "created_time", "direction": "descending"}],
+        "page_size": 1,
+    }
+    r = requests.post(f"{_API}/databases/{database_id}/query",
+                      headers=_headers(), json=payload, timeout=30)
+    if not r.ok:
+        raise RuntimeError(f"Notion 조회 실패 {r.status_code}: {r.text[:200]}")
+    results = r.json().get("results", [])
+    if not results:
+        return "", "", ""
+    page = results[0]
+    props = page.get("properties", {}).get(title_prop, {})
+    title = _plain(props.get("title"))
+    return title, _blocks_to_text(page["id"]), page.get("url", "")
+
+
 def _title_property_name(database_id: str) -> str:
     """데이터베이스의 title 속성 이름을 조회 (DB마다 '이름'/'Name' 등 제각각)."""
     r = requests.get(f"{_API}/databases/{database_id}", headers=_headers(), timeout=30)

@@ -145,6 +145,13 @@ DEFAULTS = {
     "wk_after": "",
     "wk_analysis": "",
     "wk_blog": "",
+    # 투자 토론 모드
+    "iv_unlocked": False,   # 비밀번호 게이트 (public 앱이므로 필수)
+    "iv_brief": "",         # Notion에서 읽어온 오늘 브리핑
+    "iv_brief_title": "",
+    "iv_brief_url": "",
+    "iv_messages": [],      # [(발언자, 내용)]
+    "iv_memo": "",
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
@@ -325,8 +332,9 @@ if st.session_state.mode is None:
         ("music",   "음악 감상", "분위기를 고르면, 곡과 함께 짧은 에세이를 씁니다", 0),
         ("workout", "오늘 운동", "기록과 몸 상태를 더해 운동 일지를 남깁니다", "w0"),
         ("devlog",  "개발 일지", "오늘 만든 것을 담백하게 정리한 기록으로 남깁니다", "d0"),
+        ("invest",  "투자 토론", "오늘 브리핑을 놓고 토론하고, 그대로 일지를 남깁니다", "i0"),
     )
-    for col, (mode_key, title, desc, first_step) in zip(st.columns(3), _MODES):
+    for col, (mode_key, title, desc, first_step) in zip(st.columns(len(_MODES)), _MODES):
         with col:
             st.markdown(f'<div class="mode-card"><div class="mode-title">{title}</div>'
                         f'<div class="mode-desc">{desc}</div></div>',
@@ -362,3 +370,14 @@ elif st.session_state.mode == "devlog":
     st.caption("개발 메모를 정리해 이미지와 함께 Notion에 발행합니다.")
     st.divider()
     devlog_flow.run()
+
+# ══════════════════════════════════════════════════════════
+# 투자 토론 모드
+# ══════════════════════════════════════════════════════════
+elif st.session_state.mode == "invest":
+    from modes.investment import app_flow as invest_flow
+
+    st.title("투자 토론")
+    st.caption("오늘 모닝 브리핑을 불러와 토론하고, 그 결론으로 투자 일지를 남깁니다.")
+    st.divider()
+    invest_flow.run()
