@@ -25,12 +25,15 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "실행 모드"
+        # 수동 실행은 대부분 '브리핑 다시 돌리기'라서 brief가 기본이다.
+        # journal은 memo가 있어야 의미가 있는데, 드롭다운을 안 바꾸면 memo 없이
+        # 일지가 발행돼(브리핑인 줄 알고 열면 일지가 나온다) 기본값에서 뺐다.
+        description: "실행 모드 (journal은 아래 memo와 함께 선택)"
         type: choice
         options: [brief, journal, weekly, check, backfill]
-        default: journal
+        default: brief
       memo:
-        description: "오늘의 투자 메모 (journal 모드)"
+        description: "오늘의 투자 메모 (journal 모드에서만 사용)"
         required: false
         default: ""
 
@@ -62,7 +65,11 @@ jobs:
             # 스케줄 실행: 토요일 09시(KST) cron이면 주간 회고, 아니면 브리핑
             if [ "${{ github.event.schedule }}" = "0 0 * * 6" ]; then MODE=weekly; else MODE=brief; fi
           fi
+          echo "▶ 실행 모드: $MODE"
           if [ "$MODE" = "journal" ]; then
+            # 메모 없는 일지는 '브리핑을 돌린 줄 알았는데 일지가 나온' 경우가 많다
+            [ -n "${{ github.event.inputs.memo }}" ] || \
+              echo "⚠️ memo가 비어 있습니다 — 브리핑을 원했다면 mode=brief로 다시 실행하세요"
             python invest.py --memo "${{ github.event.inputs.memo }}"
           elif [ "$MODE" = "weekly" ]; then
             python invest.py --weekly
