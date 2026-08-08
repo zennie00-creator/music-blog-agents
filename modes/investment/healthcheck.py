@@ -27,6 +27,34 @@ def _fail(msg):
     print(f"  ❌ {msg}")
 
 
+# 아직 워치리스트에 못 넣은 지표들 — GOOGLEFINANCE에 없거나(달러인덱스·COMEX 선물),
+# 무료 소스마다 Actions IP에서 되는지가 달라 코드로 단정할 수 없다.
+# 매 --check가 실제로 찔러 보고 로그로 알린다. 되는 것이 확인되면 그 심볼을
+# portfolio.md에 한 줄 추가하면 끝난다.
+_PROBE_CANDIDATES = [
+    ("달러 인덱스", "naver/FX_USDX", "네이버 시세 API (siseJson)"),
+    ("달러 인덱스", "naver/USDX", "네이버 시세 API (코드 변형)"),
+    ("달러 인덱스", "fred/DTWEXBGS", "FRED 광의 달러지수 (Actions에서 자주 막힘)"),
+    ("달러 인덱스", "DX-Y.NYB", "Yahoo ICE 달러지수 (Actions는 429 잦음)"),
+    ("금 COMEX 선물", "GC=F", "Yahoo COMEX 최근월물 ($/oz — 되면 현물 XAUUSD 대체)"),
+    ("금 COMEX 선물", "naver/GCcv1", "네이버 국제상품 (코드 추정)"),
+]
+
+
+def _probe_sources():
+    for label, symbol, desc in _PROBE_CANDIDATES:
+        try:
+            rows = fetch_history(symbol, days=40)
+        except Exception as e:
+            _fail(f"[{label}] {symbol} — {desc}: {type(e).__name__} {str(e)[:55]}")
+            continue
+        if rows:
+            _ok(f"[{label}] {symbol} — {desc}: {len(rows)}행, 최근 {rows[-1]['date']} "
+                f"= {rows[-1]['close']}  ← portfolio.md에 추가 가능")
+        else:
+            _warn(f"[{label}] {symbol} — {desc}: 0행 (심볼 불인식 또는 차단)")
+
+
 def run_check():
     print("\n🔧 투자 일지 헬스체크")
 
@@ -49,6 +77,17 @@ def run_check():
             _fail("구글시트 CSV: 0종목 — URL·게시 설정 확인 (웹에 게시 → CSV 인지)")
     else:
         _warn("MARKET_CSV_URLS 미설정 — 미국 시세는 gsheet/ 심볼로 안 들어옴")
+    if config.MARKET_HISTORY_CSV_URLS:
+        from modes.investment import sheet_source as _ss
+        hist = _ss.fetch_sheet_history()
+        if hist:
+            sample = ", ".join(f"{t}({len(r)}행)" for t, r in list(hist.items())[:3])
+            _ok(f"이력 시트: {len(hist)}종목 — {sample} …")
+        else:
+            _fail("이력 시트: 0종목 — 1행에 티커가 있는지, 게시가 CSV인지 확인")
+    else:
+        _warn("MARKET_HISTORY_CSV_URLS 미설정 — 백필이 stooq/Yahoo에만 의존 "
+              "(국채·원자재·환율은 대개 실패)")
     sections, _ = portfolio.load()
     for title, items in sections:
         print(f"  — {title}")
@@ -63,7 +102,10 @@ def run_check():
                 note = "" if has_vol else " · 거래량 없음 → 다이버전스/반등/RS 제외 (시세·커브는 정상)"
                 _ok(f"{name} ({sym}): {len(hist)}행, {hist[0]['date']} ~ {hist[-1]['date']}{note}")
 
-    print("\n[3] 심리 지표")
+    print("\n[3] 미채택 소스 후보 시험 (되는 것을 portfolio.md에 추가)")
+    _probe_sources()
+
+    print("\n[4] 심리 지표")
     fg = fetch_fear_greed()
     _ok(f"CNN 공포·탐욕: {fg['score']} ({fg['rating']})") if fg else _fail("CNN 공포·탐욕: 수집 실패")
     ratios, err = put_call.fetch()
@@ -72,7 +114,7 @@ def run_check():
     else:
         _fail(f"CBOE Put/Call: 수집 실패 ({err}) — 엔드포인트 확인 필요")
 
-    print("\n[4] LLM · Notion 연결 (소액 ping)")
+    print("\n[5] LLM · Notion 연결 (소액 ping)")
     if config.XAI_API_KEY:
         try:
             ask_grok("짧게 답하세요.", "연결 확인용입니다. 'ok'라고만 답하세요.",

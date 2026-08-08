@@ -2,8 +2,10 @@
 #
 # 하루 리듬:
 #   - 모닝 브리핑: 미국 장 마감 후 KST 화~토 06:30 자동 실행 → Notion 발행
-#   - 투자 일지: 한국 장 마감 후 수동 실행(Actions 탭 → Run workflow → memo 입력)
-#     또는 로컬에서 `python invest.py --memo "..."`
+#   - 오늘의 메모: KST 평일 18시경 Notion에 '📝 오늘의 메모' 페이지 생성 → 폰에서 적어 둔다
+#   - 투자 일지: KST 평일 22시경 자동 실행. 메모 페이지와 그날 토론을 읽어 발행하고,
+#     둘 다 비어 있으면 건너뛴다(빈 껍데기 일지를 쌓지 않기 위함)
+#   - 수동 실행도 가능: Actions 탭 → Run workflow → mode·memo 지정
 #
 # 필요한 Secrets (repo Settings → Secrets and variables → Actions):
 #   ANTHROPIC_API_KEY / XAI_API_KEY / NOTION_API_KEY / NOTION_DATABASE_ID
@@ -22,6 +24,8 @@ on:
   schedule:
     - cron: "0 21 * * 1-5"   # UTC 월~금 21:00 = KST 화~토 06:00 목표 (GitHub 지연 감안해 30분 당김) → 브리핑
     - cron: "0 0 * * 6"      # UTC 토 00:00 = KST 토 09:00 → 주간 회고
+    - cron: "50 8 * * 1-5"   # UTC 월~금 08:50 = KST 17:50 → 오늘의 메모 페이지 준비(=쓸 시간 알림)
+    - cron: "40 12 * * 1-5"  # UTC 월~금 12:40 = KST 21:40 → 자동 일지 (지연 감안해 22시 목표)
   workflow_dispatch:
     inputs:
       mode:
@@ -30,7 +34,7 @@ on:
         # 일지가 발행돼(브리핑인 줄 알고 열면 일지가 나온다) 기본값에서 뺐다.
         description: "실행 모드 (journal은 아래 memo와 함께 선택)"
         type: choice
-        options: [brief, journal, weekly, check, backfill]
+        options: [brief, journal, weekly, check, backfill, memo-page, auto-journal]
         default: brief
       memo:
         description: "오늘의 투자 메모 (journal 모드에서만 사용)"
@@ -51,6 +55,9 @@ jobs:
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
       NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       MARKET_CSV_URLS: ${{ secrets.MARKET_CSV_URLS }}  # 구글시트 웹 게시 CSV URL(들), 쉼표 구분
+      # 과거 이력 탭(GOOGLEFINANCE 기간 조회) 게시 CSV — backfill의 1순위 소스.
+      # 없으면 기존대로 stooq/Yahoo로 폴백한다(국채·원자재·환율은 대개 실패).
+      MARKET_HISTORY_CSV_URLS: ${{ secrets.MARKET_HISTORY_CSV_URLS }}
       USE_GROK: ${{ vars.USE_GROK }}  # Variables에 USE_GROK=0 넣으면 Grok 건너뛰고 Claude로 분석
     steps:
       - uses: actions/checkout@v4
@@ -62,11 +69,20 @@ jobs:
         run: |
           MODE="${{ github.event.inputs.mode }}"
           if [ -z "$MODE" ]; then
-            # 스케줄 실행: 토요일 09시(KST) cron이면 주간 회고, 아니면 브리핑
-            if [ "${{ github.event.schedule }}" = "0 0 * * 6" ]; then MODE=weekly; else MODE=brief; fi
+            # 스케줄 실행은 cron 식으로 무엇을 할지 가른다
+            case "${{ github.event.schedule }}" in
+              "0 0 * * 6")     MODE=weekly ;;       # 토 09시 KST — 주간 회고
+              "50 8 * * 1-5")  MODE=memo-page ;;    # 17:50 KST — 메모 페이지 준비
+              "40 12 * * 1-5") MODE=auto-journal ;; # 21:40 KST — 자동 일지
+              *)               MODE=brief ;;        # 06시 KST — 모닝 브리핑
+            esac
           fi
           echo "▶ 실행 모드: $MODE"
-          if [ "$MODE" = "journal" ]; then
+          if [ "$MODE" = "memo-page" ]; then
+            python invest.py --memo-page
+          elif [ "$MODE" = "auto-journal" ]; then
+            python invest.py --auto-journal
+          elif [ "$MODE" = "journal" ]; then
             # 메모 없는 일지는 '브리핑을 돌린 줄 알았는데 일지가 나온' 경우가 많다
             [ -n "${{ github.event.inputs.memo }}" ] || \
               echo "⚠️ memo가 비어 있습니다 — 브리핑을 원했다면 mode=brief로 다시 실행하세요"

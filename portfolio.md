@@ -16,6 +16,34 @@ gsheet/INDEXCBOE:FVX: 미 5년물
 gsheet/INDEXCBOE:TNX: 미 10년물
 gsheet/INDEXCBOE:TYX: 미 30년물
 
+## 환율
+# 금리 다음에 둔다 — 통화는 금리차의 결과라 채권 바로 뒤에서 읽어야 맥락이 이어진다.
+# 달러 대비 주요 통화(유로·엔) → 원화 → 달러 자체 순.
+# FRED는 Actions IP에서 자주 막혀(market_data._fetch_fred 주석 참조) 쓰지 않는다.
+# gsheet(GOOGLEFINANCE)가 이 시스템에서 가장 안정적인 경로라 환율도 여기에 맞춘다.
+# ※ EURUSD·USDJPY는 시트에 아래 줄을 추가해야 값이 들어온다 (원/달러는 이미 있음):
+#     B열 CURRENCY:EURUSD   C열 =GOOGLEFINANCE(Bn,"price")
+#     B열 CURRENCY:USDJPY   C열 =GOOGLEFINANCE(Bn,"price")
+gsheet/CURRENCY:EURUSD: 유로/달러 (↑유로 강세)
+gsheet/CURRENCY:USDJPY: 달러/엔 (↑엔 약세)
+gsheet/CURRENCY:USDKRW: 원/달러 (↑원화 약세)
+# 달러 인덱스(DXY)는 GOOGLEFINANCE에 없다. 무료 대안(naver·FRED)이 Actions에서
+# 실제로 되는지 `--check`가 매번 시험해 로그로 알려준다 → 되는 쪽을 여기 추가할 것.
+
+## 금
+# 자산배분(현금/채권/금/주식)의 한 축인데 그동안 워치리스트에 아예 없었다.
+# 달러 바로 밑에 둔다 — 금은 실질금리·달러의 거울이라 함께 읽어야 한다.
+#
+# 온스당 가격으로 본다. GLD 같은 ETF는 주당 가격이 금값의 1/10 수준이라
+# 대시보드 숫자가 '금 가격'으로 읽히지 않는다.
+# COMEX 선물(GC=F)이 정확히 뉴욕상품거래소 값이지만 GOOGLEFINANCE는 선물을
+# 지원하지 않고, Yahoo는 Actions IP에서 429로 막힌다. 그래서 gsheet에서 받을 수 있는
+# 현물 XAUUSD($/oz)를 쓴다 — COMEX 최근월물과는 베이시스(보관·금리)만큼만 차이 난다.
+# COMEX 선물 직접 수급은 `--check`가 매번 시험한다 → 되면 여기로 교체할 것.
+# ※ 시트에 아래 줄을 추가해야 값이 들어온다:
+#     B열 CURRENCY:XAUUSD   C열 =GOOGLEFINANCE(Bn,"price")
+gsheet/CURRENCY:XAUUSD: 금 현물 ($/oz)
+
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
 gsheet/INDEXNASDAQ:NDX: 나스닥 100
@@ -46,9 +74,6 @@ gsheet/NASDAQ:AMAT: 어플라이드 머티어리얼즈 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:LRCX: 램리서치 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:KLAC: KLA @gsheet/INDEXNASDAQ:SOX
 
-## 환율
-gsheet/CURRENCY:USDKRW: 원/달러
-
 ## 기술주 (관심)
 gsheet/NASDAQ:AAPL: 애플
 gsheet/NASDAQ:MSFT: 마이크로소프트
@@ -62,6 +87,19 @@ gsheet/NASDAQ:IBIT: 비트코인 ETF(IBIT)
 gsheet/CURRENCY:BTCUSD: 비트코인(BTC)
 gsheet/NASDAQ:SPCX: SPCX
 
+# ── 과거 이력을 시트에서 받기 (권장) ────────────────────────────
+# 스냅숏 탭은 '오늘 값'만 주므로 이력이 하루 한 줄씩만 쌓인다. stooq·Yahoo 백필은
+# 국채·원자재·환율에서 대부분 실패한다(Actions IP 429/차단). 시트에 이력 탭을
+# 하나 만들어 게시하면 구글 서버가 대신 받아오므로 차단에 걸리지 않는다.
+#
+# 새 탭을 만들고 티커 하나당 2열씩 쓴다 (1행 티커, 2행부터 기간 조회):
+#   A1: INDEXCBOE:TNX          C1: NYSEARCA:USO
+#   A2: =GOOGLEFINANCE(A1,"close",DATE(2019,1,1),TODAY())
+#   C2: =GOOGLEFINANCE(C1,"close",DATE(2019,1,1),TODAY())
+# 그 탭을 '웹에 게시 → CSV'로 게시하고 URL을 Actions Secrets의
+# MARKET_HISTORY_CSV_URLS에 넣으면 backfill이 1순위로 쓴다(쉼표로 여러 개 가능).
+# 날짜 로케일은 자동 인식하지만, 확실히 하려면 =TEXT(...,"yyyy-mm-dd")로 감싸도 된다.
+#
 # 채권(위 gsheet/INDEXCBOE:*)은 시트에 이 줄들을 추가해야 값이 들어온다:
 #   B열 티커       C열 =GOOGLEFINANCE(Bn,"price")
 #   INDEXCBOE:IRX  INDEXCBOE:FVX  INDEXCBOE:TNX  INDEXCBOE:TYX

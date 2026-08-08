@@ -38,6 +38,9 @@ USE_GROK = os.environ.get("USE_GROK", "1").strip().lower() not in ("0", "false",
 
 # 시장 데이터 — 구글시트 웹 게시 CSV URL(들). 쉼표로 여러 개. (Yahoo 429 우회)
 MARKET_CSV_URLS = os.environ.get("MARKET_CSV_URLS", "")
+# 과거 이력용 게시 CSV (GOOGLEFINANCE 기간 조회 탭). 스냅숏 URL과 형식이 달라
+# 따로 둔다 — 섞으면 어느 쪽 파서를 쓸지 추측해야 한다.
+MARKET_HISTORY_CSV_URLS = os.environ.get("MARKET_HISTORY_CSV_URLS", "")
 
 # Notion
 NOTION_API_KEY = os.environ.get("NOTION_API_KEY", "")

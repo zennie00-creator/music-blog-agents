@@ -26,11 +26,60 @@ def _endpoints():
         day -= timedelta(days=day.weekday() - 4)
     ymd = day.isoformat()
     return [
+        # 정적 CSV 아카이브 — 동적 API(/api/)와 경로가 달라 차단 정책도 다를 수 있다.
+        # 이쪽이 되면 파싱도 확정적이라 가장 먼저 시도한다.
+        f"{_ARCHIVE}/totalpc.csv",
+        f"{_ARCHIVE}/equitypc.csv",
+        f"{_ARCHIVE}/indexpc.csv",
+        f"{_ARCHIVE}/totalpcarchive.csv",
+        f"{_ARCHIVE}/equitypcarchive.csv",
+        f"{_ARCHIVE}/indexpcarchive.csv",
         "https://cdn.cboe.com/api/global/delayed_quotes/put_call_ratios.json",
         "https://cdn.cboe.com/data/us/options/market_statistics/daily/all_daily_statistics.json",
         f"https://www.cboe.com/us/options/market_statistics/daily/?dt={ymd}",
         "https://www.cboe.com/us/options/market_statistics/",
     ]
+
+
+_ARCHIVE = "https://cdn.cboe.com/resources/options/volume_and_call_put_ratios"
+
+# CSV 파일명 → 라벨. 파일 하나가 한 종류의 비율만 담으므로 URL로 라벨이 정해진다.
+_CSV_LABELS = [("total", "total_ratio"), ("equity", "equity_ratio"),
+               ("index", "index_ratio")]
+
+
+def _parse_csv(text: str, url: str):
+    """CBOE 비율 아카이브 CSV → {label: 최신 비율}.
+
+    형식: 안내문 몇 줄 뒤에 DATE,CALL,PUT,TOTAL,P/C Ratio 헤더가 오고 일자별 행이
+    이어진다. 헤더 위치가 파일마다 달라 '비율처럼 보이는 마지막 열'을 찾는 대신,
+    헤더에서 ratio 열 번호를 잡고 마지막 데이터 행을 읽는다."""
+    import csv as _csv
+    import io as _io
+    key = next((k for name, k in _CSV_LABELS if name in url.lower()), "total_ratio")
+    rows = list(_csv.reader(_io.StringIO(text)))
+    ratio_col, last_val = None, None
+    for row in rows:
+        if ratio_col is None:
+            # 파일 첫 줄의 안내문("Cboe Volume and Put/Call Ratios")에도 'ratio'가
+            # 들어 있어 그걸 헤더로 잡으면 이후 전부 실패한다. 헤더는 열이 여럿이다.
+            if len(row) < 3:
+                continue
+            for i, cell in enumerate(row):
+                c = cell.strip().lower()
+                if "ratio" in c or c in ("p/c", "pc"):
+                    ratio_col = i
+                    break
+            continue
+        if len(row) <= ratio_col:
+            continue
+        try:
+            v = float(row[ratio_col].strip())
+        except ValueError:
+            continue
+        if 0 < v < 5:
+            last_val = v          # 파일은 과거→최신 순 — 마지막 값이 최신
+    return {key: last_val} if last_val is not None else {}
 
 
 def _parse(data):
@@ -72,11 +121,25 @@ def _parse_html(text):
 
 def fetch():
     last_err = None
+    collected = {}
     for url in _endpoints():
+        # CSV 아카이브는 파일 하나가 한 종류(total/equity/index)만 담는다.
+        # 첫 성공에서 멈추면 Total만 얻고 끝나므로, CSV끼리는 모아서 합친다.
+        is_csv = url.startswith(_ARCHIVE)
+        if collected and not is_csv:
+            break                    # CSV로 이미 값을 얻었으면 느린 HTML 경로는 생략
         try:
             r = requests.get(url, headers=_UA, timeout=30)
             r.raise_for_status()
             body = r.text
+            if is_csv:
+                got = _parse_csv(body, url)
+                if got:
+                    collected.update(got)
+                    print(f"  ✅ Put/Call CSV: {url.rsplit('/', 1)[-1]} → {got}")
+                else:
+                    last_err = f"{url.rsplit('/', 1)[-1]}: 200이지만 비율 열을 못 찾음"
+                continue
             try:
                 ratios = _parse(r.json())
             except ValueError:      # JSON이 아니면 HTML로 시도
@@ -95,6 +158,8 @@ def fetch():
                     print(f"     ↳ 발췌: {' '.join(s.split())[:150]}")
         except Exception as e:
             last_err = f"{url.split('//')[-1][:50]}: {type(e).__name__} {str(e)[:60]}"
+    if collected:
+        return collected, None
     return {}, last_err
 
 
