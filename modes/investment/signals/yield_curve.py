@@ -22,6 +22,13 @@ TITLE = "금리 커브 · 한미 금리차"
 # CBOE 금리 지수 → (국가, 만기년). ^IRX는 13주(≈3개월) = 0.25년.
 _YAHOO_YIELD = {"^IRX": ("us", 0.25), "^FVX": ("us", 5),
                 "^TNX": ("us", 10), "^TYX": ("us", 30)}
+
+# 같은 CBOE 금리 지수를 구글시트로 받을 때의 심볼. ctx["histories"]의 키는
+# portfolio.md에 적힌 그대로(gsheet/INDEXCBOE:TNX)라서, Yahoo 심볼로만 매핑하던
+# 동안에는 어떤 만기도 잡히지 않아 이 신호 전체가 침묵했다.
+_YAHOO_YIELD.update({f"gsheet/INDEXCBOE:{code}": key for code, key in [
+    ("IRX", ("us", 0.25)), ("FVX", ("us", 5)),
+    ("TNX", ("us", 10)), ("TYX", ("us", 30))]})
 # FRED 미국채 상수만기: fred/DGS{만기}
 _FRED_US = re.compile(r"^fred/DGS(\d+)$")
 # 한국 일별 국채 심볼(사용자가 추가할 경우): krbond/{만기}
@@ -69,8 +76,19 @@ def run(ctx):
     lines = [f"### {TITLE}"]
 
     us2, us10, us30 = y.get(("us", 2)), y.get(("us", 10)), y.get(("us", 30))
+    us3m = y.get(("us", 0.25))
     kr10 = y.get(("kr", 10))
 
+    # 10년-3개월. 2년물은 CBOE 지수에도 GOOGLEFINANCE에도 없어 us2가 늘 None이었고,
+    # 그래서 아래 2s10s 블록은 실제로 한 번도 실행된 적이 없다. 3개월물은 이미
+    # 들어오므로(IRX) 이 조합은 오늘부터 계산된다. 뉴욕 연준 침체확률 모델이
+    # 쓰는 것도 2s10s가 아니라 10년-3개월이다.
+    if us3m and us10:
+        lines.append(_spread_line(
+            "미 10년-3개월 (연준 침체지표)", us10, us3m, invert_warn=True,
+            normal_note="정상 커브. 연준 모델이 침체확률 산출에 쓰는 기준 스프레드",
+            invert_note="역전 상태 — 침체 선행 신호. 역전 '해소' 국면이 역사적으로 더 위험",
+        ))
     if us2 and us10:
         lines.append(_spread_line(
             "미 2s10s (10년-2년)", us10, us2, invert_warn=True,

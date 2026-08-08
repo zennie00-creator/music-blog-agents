@@ -41,6 +41,39 @@ _PROBE_CANDIDATES = [
 ]
 
 
+# 금 온스당 가격은 어느 경로도 확정되지 않았다. GOOGLEFINANCE는 귀금속·선물을
+# 지원하지 않고(XAUUSD → #N/A), 시트의 IMPORTDATA/IMPORTXML도 stooq·네이버 모두
+# 실패했다. 남은 길은 러너에서 직접 받는 것인데, 어느 호스트가 데이터센터 IP를
+# 허용하는지는 찔러 봐야만 안다. fetch_history의 접두사 체계로는 표현이 안 되는
+# 원 URL들이라 여기서 따로 시험하고, HTTP 상태와 응답 앞부분을 그대로 남긴다.
+_GOLD_URLS = [
+    # 키 없는 금 시세 JSON — 시트에서도 러너에서도 같은 URL을 쓸 수 있다.
+    ("gold-api 현물(XAU)", "https://api.gold-api.com/price/XAU"),
+    ("goldprice.org 현물", "https://data-asg.goldprice.org/dbXRates/USD"),
+    # stooq·네이버는 구글 페처를 막는 것으로 확인됐지만, 러너 IP는 별개라 함께 본다.
+    ("stooq COMEX 연결선물", "https://stooq.com/q/l/?s=gc.f&f=sd2t2ohlcv&h&e=csv"),
+    ("stooq 금 현물", "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"),
+    ("Yahoo chart GC=F",
+     "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=5d&interval=1d"),
+]
+
+
+def _probe_gold():
+    ua = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"}
+    for label, url in _GOLD_URLS:
+        try:
+            r = requests.get(url, headers=ua, timeout=15)
+        except Exception as e:
+            _fail(f"{label}: {type(e).__name__} {str(e)[:60]}")
+            continue
+        head = " ".join(r.text[:160].split())
+        if r.ok and head:
+            _ok(f"{label}: HTTP {r.status_code} — {head[:110]}")
+        else:
+            _fail(f"{label}: HTTP {r.status_code} — {head[:80]}")
+
+
 def _probe_sources():
     for label, symbol, desc in _PROBE_CANDIDATES:
         try:
@@ -104,6 +137,8 @@ def run_check():
 
     print("\n[3] 미채택 소스 후보 시험 (되는 것을 portfolio.md에 추가)")
     _probe_sources()
+    print("  — 금 온스당 (원 URL 직접 시험)")
+    _probe_gold()
 
     print("\n[4] 심리 지표")
     fg = fetch_fear_greed()

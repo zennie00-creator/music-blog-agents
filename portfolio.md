@@ -34,15 +34,22 @@ gsheet/CURRENCY:USDKRW: 원/달러 (↑원화 약세)
 # 자산배분(현금/채권/금/주식)의 한 축인데 그동안 워치리스트에 아예 없었다.
 # 달러 바로 밑에 둔다 — 금은 실질금리·달러의 거울이라 함께 읽어야 한다.
 #
-# 온스당 가격으로 본다. GLD 같은 ETF는 주당 가격이 금값의 1/10 수준이라
-# 대시보드 숫자가 '금 가격'으로 읽히지 않는다.
-# COMEX 선물(GC=F)이 정확히 뉴욕상품거래소 값이지만 GOOGLEFINANCE는 선물을
-# 지원하지 않고, Yahoo는 Actions IP에서 429로 막힌다. 그래서 gsheet에서 받을 수 있는
-# 현물 XAUUSD($/oz)를 쓴다 — COMEX 최근월물과는 베이시스(보관·금리)만큼만 차이 난다.
-# COMEX 선물 직접 수급은 `--check`가 매번 시험한다 → 되면 여기로 교체할 것.
-# ※ 시트에 아래 줄을 추가해야 값이 들어온다:
-#     B열 CURRENCY:XAUUSD   C열 =GOOGLEFINANCE(Bn,"price")
-gsheet/CURRENCY:XAUUSD: 금 현물 ($/oz)
+# 온스당 가격으로 본다. ETF(GLD)는 주당 $398 수준이라 대시보드 숫자가 '금값'으로
+# 읽히지 않고, 보수료 때문에 금값과 서서히 벌어져 ×10.8 환산도 가짜 정밀도가 된다.
+#
+# COMEX 최근월물이 원래 목표였지만 무료로 주는 곳(stooq gc.f, Yahoo GC=F, 네이버)이
+# 모두 구글 페처를 막아 시트로 받을 수 없었다. 그래서 현물(XAU/USD)로 간다 —
+# COMEX 최근월물과는 베이시스(보관비·금리)만큼, 보통 0.5~1% 안쪽 차이다.
+# 추세·비중 판단에는 실질 차이가 없다.
+# GOOGLEFINANCE는 귀금속을 아예 지원하지 않는다(CURRENCY:XAUUSD → #N/A, 시트에서
+# 직접 확인). 키 없는 시세 JSON을 시트가 대신 받아온다.
+#
+# ※ 시트 추가 — 티커 칸에 라벨 'XAUUSD'를 직접 쓰고, 가격 칸에:
+#     =VALUE(REGEXEXTRACT(TEXTJOIN("",TRUE,
+#       IMPORTDATA("https://api.gold-api.com/price/XAU")),"""price"":\s*([0-9.]+)"))
+#   (파서는 티커처럼 생긴 라벨이면 무엇이든 받는다 — 대문자·숫자·`:._-` 조합)
+# 러너에서 COMEX 선물이 직접 뚫리면(`--check`의 금 프로브) 그쪽으로 교체할 것.
+gsheet/XAUUSD: 금 현물 (XAU/USD, $/oz)
 
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
