@@ -34,15 +34,19 @@ gsheet/CURRENCY:USDKRW: 원/달러 (↑원화 약세)
 # 자산배분(현금/채권/금/주식)의 한 축인데 그동안 워치리스트에 아예 없었다.
 # 달러 바로 밑에 둔다 — 금은 실질금리·달러의 거울이라 함께 읽어야 한다.
 #
-# 온스당 가격으로 본다. GLD 같은 ETF는 주당 가격이 금값의 1/10 수준이라
-# 대시보드 숫자가 '금 가격'으로 읽히지 않는다.
-# COMEX 선물(GC=F)이 정확히 뉴욕상품거래소 값이지만 GOOGLEFINANCE는 선물을
-# 지원하지 않고, Yahoo는 Actions IP에서 429로 막힌다. 그래서 gsheet에서 받을 수 있는
-# 현물 XAUUSD($/oz)를 쓴다 — COMEX 최근월물과는 베이시스(보관·금리)만큼만 차이 난다.
-# COMEX 선물 직접 수급은 `--check`가 매번 시험한다 → 되면 여기로 교체할 것.
-# ※ 시트에 아래 줄을 추가해야 값이 들어온다:
-#     B열 CURRENCY:XAUUSD   C열 =GOOGLEFINANCE(Bn,"price")
-gsheet/CURRENCY:XAUUSD: 금 현물 ($/oz)
+# 온스당 가격(COMEX)으로 본다. ETF(GLD)는 주당 $398 수준이라 대시보드 숫자가
+# '금값'으로 읽히지 않고, 보수료 때문에 금값과 서서히 벌어져 ×10.8 환산도
+# 가짜 정밀도가 된다.
+#
+# GOOGLEFINANCE는 귀금속·선물을 지원하지 않는다(CURRENCY:XAUUSD → #N/A, 시트에서
+# 직접 확인). 대신 시트의 IMPORTDATA로 받는다 — 구글 서버가 대신 가져오므로
+# Actions IP 차단(Yahoo 429·stooq 봇차단)에 걸리지 않는다. Put/Call·시세에서
+# 이미 쓰고 있는 것과 같은 우회다.
+#
+# ※ 시트 추가 — 티커 칸에 라벨 'COMEX:GC'를 직접 쓰고, 가격 칸에:
+#     =INDEX(IMPORTDATA("https://stooq.com/q/l/?s=gc.f&f=sd2t2ohlcv&h&e=csv"),2,7)
+#   (파서는 티커처럼 생긴 라벨이면 무엇이든 받는다 — 대문자·숫자·`:._-` 조합)
+gsheet/COMEX:GC: 금 (COMEX 최근월물, $/oz)
 
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
