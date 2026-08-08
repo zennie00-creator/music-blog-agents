@@ -47,9 +47,12 @@ _PROBE_CANDIDATES = [
 # 허용하는지는 찔러 봐야만 안다. fetch_history의 접두사 체계로는 표현이 안 되는
 # 원 URL들이라 여기서 따로 시험하고, HTTP 상태와 응답 앞부분을 그대로 남긴다.
 _GOLD_URLS = [
+    # 키 없는 금 시세 JSON — 시트에서도 러너에서도 같은 URL을 쓸 수 있다.
+    ("gold-api 현물(XAU)", "https://api.gold-api.com/price/XAU"),
+    ("goldprice.org 현물", "https://data-asg.goldprice.org/dbXRates/USD"),
+    # stooq·네이버는 구글 페처를 막는 것으로 확인됐지만, 러너 IP는 별개라 함께 본다.
     ("stooq COMEX 연결선물", "https://stooq.com/q/l/?s=gc.f&f=sd2t2ohlcv&h&e=csv"),
     ("stooq 금 현물", "https://stooq.com/q/l/?s=xauusd&f=sd2t2ohlcv&h&e=csv"),
-    ("stooq 선물 일별", "https://stooq.com/q/d/l/?s=gc.f&i=d"),
     ("Yahoo chart GC=F",
      "https://query1.finance.yahoo.com/v8/finance/chart/GC%3DF?range=5d&interval=1d"),
 ]
