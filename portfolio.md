@@ -30,6 +30,15 @@ gsheet/CURRENCY:USDKRW: 원/달러 (↑원화 약세)
 # 달러 인덱스(DXY)는 GOOGLEFINANCE에 없다. 무료 대안(naver·FRED)이 Actions에서
 # 실제로 되는지 `--check`가 매번 시험해 로그로 알려준다 → 되는 쪽을 여기 추가할 것.
 
+## 금
+# 자산배분(현금/채권/금/주식)의 한 축인데 그동안 워치리스트에 아예 없었다.
+# 달러 바로 밑에 둔다 — 금은 실질금리·달러의 거울이라 함께 읽어야 한다.
+# 현물(CURRENCY:XAUUSD)은 거래량이 없어 신호 모듈에서 빠진다. GLD는 거래량이
+# 있어 다이버전스·반등품질·RS가 모두 걸린다.
+# ※ 시트에 아래 줄을 추가해야 값이 들어온다:
+#     B열 NYSEARCA:GLD   C열 =GOOGLEFINANCE(Bn,"price")
+gsheet/NYSEARCA:GLD: 금 ETF(GLD·금 현물 추종)
+
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
 gsheet/INDEXNASDAQ:NDX: 나스닥 100
