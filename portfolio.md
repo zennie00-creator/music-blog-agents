@@ -16,6 +16,20 @@ gsheet/INDEXCBOE:FVX: 미 5년물
 gsheet/INDEXCBOE:TNX: 미 10년물
 gsheet/INDEXCBOE:TYX: 미 30년물
 
+## 환율
+# 금리 다음에 둔다 — 통화는 금리차의 결과라 채권 바로 뒤에서 읽어야 맥락이 이어진다.
+# 달러 대비 주요 통화(유로·엔) → 원화 → 달러 자체 순.
+# FRED는 Actions IP에서 자주 막혀(market_data._fetch_fred 주석 참조) 쓰지 않는다.
+# gsheet(GOOGLEFINANCE)가 이 시스템에서 가장 안정적인 경로라 환율도 여기에 맞춘다.
+# ※ EURUSD·USDJPY는 시트에 아래 줄을 추가해야 값이 들어온다 (원/달러는 이미 있음):
+#     B열 CURRENCY:EURUSD   C열 =GOOGLEFINANCE(Bn,"price")
+#     B열 CURRENCY:USDJPY   C열 =GOOGLEFINANCE(Bn,"price")
+gsheet/CURRENCY:EURUSD: 유로/달러 (↑유로 강세)
+gsheet/CURRENCY:USDJPY: 달러/엔 (↑엔 약세)
+gsheet/CURRENCY:USDKRW: 원/달러 (↑원화 약세)
+# 달러 인덱스(DXY)는 GOOGLEFINANCE에 없다. 무료 대안(naver·FRED)이 Actions에서
+# 실제로 되는지 `--check`가 매번 시험해 로그로 알려준다 → 되는 쪽을 여기 추가할 것.
+
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500
 gsheet/INDEXNASDAQ:NDX: 나스닥 100
@@ -45,9 +59,6 @@ gsheet/NASDAQ:ASML: ASML @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:AMAT: 어플라이드 머티어리얼즈 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:LRCX: 램리서치 @gsheet/INDEXNASDAQ:SOX
 gsheet/NASDAQ:KLAC: KLA @gsheet/INDEXNASDAQ:SOX
-
-## 환율
-gsheet/CURRENCY:USDKRW: 원/달러
 
 ## 기술주 (관심)
 gsheet/NASDAQ:AAPL: 애플

@@ -14,6 +14,8 @@
   python invest.py --signal-report          # 신호 성적표 (발생 후 5/20일 수익률)
   python invest.py --weekly                 # 주간 회고 (지난 7일 일지+신호 리뷰)
   python invest.py --backfill               # (로컬 1회) Yahoo에서 과거 이력 백필 → 신호 즉시 점등
+  python invest.py --memo-page              # 저녁: Notion에 '오늘의 메모' 페이지 준비
+  python invest.py --auto-journal           # 밤: 메모 페이지·오늘 토론으로 일지 (없으면 건너뜀)
 """
 import argparse
 import sys
@@ -40,7 +42,33 @@ def main():
     p.add_argument("--weekly", action="store_true", help="주간 회고 생성·발행")
     p.add_argument("--backfill", action="store_true",
                    help="(로컬 1회) Yahoo에서 과거 이력 백필 — gsheet 신호 즉시 점등")
+    p.add_argument("--memo-page", action="store_true",
+                   help="Notion에 오늘의 메모 페이지를 준비 (저녁 알림용)")
+    p.add_argument("--auto-journal", action="store_true",
+                   help="메모 페이지·오늘 토론을 읽어 일지 작성. 둘 다 비면 건너뜀")
     args = p.parse_args()
+
+    if args.memo_page:
+        from modes.investment import memo as memo_mod
+        url, created = memo_mod.ensure()
+        print(f"{'📝 오늘의 메모 페이지 생성' if created else 'ℹ️ 이미 있음'}: {url}")
+        return
+
+    if args.auto_journal:
+        from modes.investment import memo as memo_mod
+        today = _date.today().isoformat()
+        memo = memo_mod.load(today)
+        insights = discussion.today_insights(today)
+        if not memo and not insights:
+            # 재료가 없으면 '오늘은 별도 메모가 없어…'짜리 빈 일지만 쌓인다.
+            print("⏭️ 메모도 오늘 토론도 없어 일지를 건너뜁니다 "
+                  "(메모: Notion '📝 오늘의 메모' 페이지, 토론: 앱)")
+            return
+        print(f"📝 메모 {len(memo)}자 · 토론 {len(insights)}자 → 일지 작성")
+        result = run(memo=memo, publish=not args.no_publish)
+        print("\n" + "=" * 60)
+        print(result["journal"])
+        return
 
     if args.backfill:
         from modes.investment import sheet_source

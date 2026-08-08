@@ -128,15 +128,46 @@ def _format(name, r):
     return line
 
 
+def absent_reason(rows, window: int = WINDOW):
+    """analyze()가 None을 준 이유 → ('extended'|'shallow', 수치). 데이터 부족이면 None.
+
+    조정 국면이 아닌 종목이 화면에서 조용히 사라지면 '왜 내 종목이 없지'가 된다
+    (실제로 신고가를 달리던 PLTR이 통째로 빠져 보였다). 빠진 이유를 한 줄로 남긴다.
+    analyze()의 반환 계약은 그대로 둔다 — 신호 성적표(signal_log)가 '조정 없음'을
+    신호로 기록해 버리면 적중률 집계가 오염된다."""
+    usable = [r for r in rows if r.get("volume") and r["volume"] > 0]
+    if len(usable) < 30:
+        return None
+    closes = [r["close"] for r in usable[-window:]]
+    n = len(closes)
+    peak_i = max(range(n), key=lambda i: closes[i])
+    if peak_i >= n - 2:
+        # 신고가 경신 중 — 고점 대비 낙폭이 0이라 의미가 없다. 저점 대비 상승률을 준다.
+        return "extended", (closes[-1] / min(closes) - 1) * 100
+    trough = min(closes[peak_i:])
+    return "shallow", (trough - closes[peak_i]) / closes[peak_i] * 100
+
+
 def run(ctx):
     lines = [f"### {TITLE}"]
-    found = False
+    detailed, extended, shallow = [], [], []
     for sym, rows in ctx["histories"].items():
+        name = ctx["names"].get(sym, sym)
         r = analyze(rows)
-        if not r:
+        if r:
+            detailed.append(_format(name, r))
             continue
-        found = True
-        lines.append(_format(ctx["names"].get(sym, sym), r))
-    if not found:
-        lines.append("- 의미 있는 조정(-5% 이상) 국면인 자산 없음")
+        reason = absent_reason(rows)
+        if reason:
+            (extended if reason[0] == "extended" else shallow).append((name, reason[1]))
+    lines += detailed
+    if extended:
+        lines.append("- 🚀 신고가 경신 중 (조정이 없어 반등 분석 대상 밖 — 추세 지속 여부는 "
+                     "상대강도로 판단): "
+                     + ", ".join(f"{n} 60일 저점比 {p:+.0f}%" for n, p in extended))
+    if shallow:
+        lines.append(f"- ➖ 조정 {MIN_DRAWDOWN:.0f}% 미만이라 분석 생략: "
+                     + ", ".join(f"{n} {p:.1f}%" for n, p in shallow))
+    if not detailed:
+        lines.insert(1, "- 의미 있는 조정(-5% 이상) 국면인 자산 없음")
     return "\n".join(lines)
