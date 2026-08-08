@@ -33,11 +33,16 @@ gsheet/CURRENCY:USDKRW: 원/달러 (↑원화 약세)
 ## 금
 # 자산배분(현금/채권/금/주식)의 한 축인데 그동안 워치리스트에 아예 없었다.
 # 달러 바로 밑에 둔다 — 금은 실질금리·달러의 거울이라 함께 읽어야 한다.
-# 현물(CURRENCY:XAUUSD)은 거래량이 없어 신호 모듈에서 빠진다. GLD는 거래량이
-# 있어 다이버전스·반등품질·RS가 모두 걸린다.
+#
+# 온스당 가격으로 본다. GLD 같은 ETF는 주당 가격이 금값의 1/10 수준이라
+# 대시보드 숫자가 '금 가격'으로 읽히지 않는다.
+# COMEX 선물(GC=F)이 정확히 뉴욕상품거래소 값이지만 GOOGLEFINANCE는 선물을
+# 지원하지 않고, Yahoo는 Actions IP에서 429로 막힌다. 그래서 gsheet에서 받을 수 있는
+# 현물 XAUUSD($/oz)를 쓴다 — COMEX 최근월물과는 베이시스(보관·금리)만큼만 차이 난다.
+# COMEX 선물 직접 수급은 `--check`가 매번 시험한다 → 되면 여기로 교체할 것.
 # ※ 시트에 아래 줄을 추가해야 값이 들어온다:
-#     B열 NYSEARCA:GLD   C열 =GOOGLEFINANCE(Bn,"price")
-gsheet/NYSEARCA:GLD: 금 ETF(GLD·금 현물 추종)
+#     B열 CURRENCY:XAUUSD   C열 =GOOGLEFINANCE(Bn,"price")
+gsheet/CURRENCY:XAUUSD: 금 현물 ($/oz)
 
 ## 지수 — 미국
 gsheet/INDEXSP:.INX: S&P 500

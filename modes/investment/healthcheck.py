@@ -27,29 +27,32 @@ def _fail(msg):
     print(f"  ❌ {msg}")
 
 
-# 달러 인덱스(DXY) 후보 — GOOGLEFINANCE에는 없고, 무료 소스마다 Actions IP에서
-# 되는지가 달라 코드로 단정할 수 없다. 매 --check가 실제로 찔러 보고 로그로 알린다.
-# 되는 것이 확인되면 그 심볼을 portfolio.md '## 환율'에 추가하면 끝난다.
-_DXY_CANDIDATES = [
-    ("naver/FX_USDX", "네이버 시세 API (siseJson)"),
-    ("naver/USDX", "네이버 시세 API (코드 변형)"),
-    ("fred/DTWEXBGS", "FRED 광의 달러지수 (Actions에서 자주 막힘)"),
-    ("DX-Y.NYB", "Yahoo ICE 달러지수 (Actions는 429 잦음)"),
+# 아직 워치리스트에 못 넣은 지표들 — GOOGLEFINANCE에 없거나(달러인덱스·COMEX 선물),
+# 무료 소스마다 Actions IP에서 되는지가 달라 코드로 단정할 수 없다.
+# 매 --check가 실제로 찔러 보고 로그로 알린다. 되는 것이 확인되면 그 심볼을
+# portfolio.md에 한 줄 추가하면 끝난다.
+_PROBE_CANDIDATES = [
+    ("달러 인덱스", "naver/FX_USDX", "네이버 시세 API (siseJson)"),
+    ("달러 인덱스", "naver/USDX", "네이버 시세 API (코드 변형)"),
+    ("달러 인덱스", "fred/DTWEXBGS", "FRED 광의 달러지수 (Actions에서 자주 막힘)"),
+    ("달러 인덱스", "DX-Y.NYB", "Yahoo ICE 달러지수 (Actions는 429 잦음)"),
+    ("금 COMEX 선물", "GC=F", "Yahoo COMEX 최근월물 ($/oz — 되면 현물 XAUUSD 대체)"),
+    ("금 COMEX 선물", "naver/GCcv1", "네이버 국제상품 (코드 추정)"),
 ]
 
 
-def _probe_dollar_index():
-    for symbol, desc in _DXY_CANDIDATES:
+def _probe_sources():
+    for label, symbol, desc in _PROBE_CANDIDATES:
         try:
             rows = fetch_history(symbol, days=40)
         except Exception as e:
-            _fail(f"{symbol} — {desc}: {type(e).__name__} {str(e)[:60]}")
+            _fail(f"[{label}] {symbol} — {desc}: {type(e).__name__} {str(e)[:55]}")
             continue
         if rows:
-            _ok(f"{symbol} — {desc}: {len(rows)}행, 최근 {rows[-1]['date']} "
+            _ok(f"[{label}] {symbol} — {desc}: {len(rows)}행, 최근 {rows[-1]['date']} "
                 f"= {rows[-1]['close']}  ← portfolio.md에 추가 가능")
         else:
-            _warn(f"{symbol} — {desc}: 0행 (심볼 불인식 또는 차단)")
+            _warn(f"[{label}] {symbol} — {desc}: 0행 (심볼 불인식 또는 차단)")
 
 
 def run_check():
@@ -88,8 +91,8 @@ def run_check():
                 note = "" if has_vol else " · 거래량 없음 → 다이버전스/반등/RS 제외 (시세·커브는 정상)"
                 _ok(f"{name} ({sym}): {len(hist)}행, {hist[0]['date']} ~ {hist[-1]['date']}{note}")
 
-    print("\n[3] 달러 인덱스 후보 소스 (아직 채택 전 — 되는 것을 portfolio.md에 추가)")
-    _probe_dollar_index()
+    print("\n[3] 미채택 소스 후보 시험 (되는 것을 portfolio.md에 추가)")
+    _probe_sources()
 
     print("\n[4] 심리 지표")
     fg = fetch_fear_greed()
