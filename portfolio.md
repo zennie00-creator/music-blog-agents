@@ -87,6 +87,19 @@ gsheet/NASDAQ:IBIT: 비트코인 ETF(IBIT)
 gsheet/CURRENCY:BTCUSD: 비트코인(BTC)
 gsheet/NASDAQ:SPCX: SPCX
 
+# ── 과거 이력을 시트에서 받기 (권장) ────────────────────────────
+# 스냅숏 탭은 '오늘 값'만 주므로 이력이 하루 한 줄씩만 쌓인다. stooq·Yahoo 백필은
+# 국채·원자재·환율에서 대부분 실패한다(Actions IP 429/차단). 시트에 이력 탭을
+# 하나 만들어 게시하면 구글 서버가 대신 받아오므로 차단에 걸리지 않는다.
+#
+# 새 탭을 만들고 티커 하나당 2열씩 쓴다 (1행 티커, 2행부터 기간 조회):
+#   A1: INDEXCBOE:TNX          C1: NYSEARCA:USO
+#   A2: =GOOGLEFINANCE(A1,"close",DATE(2019,1,1),TODAY())
+#   C2: =GOOGLEFINANCE(C1,"close",DATE(2019,1,1),TODAY())
+# 그 탭을 '웹에 게시 → CSV'로 게시하고 URL을 Actions Secrets의
+# MARKET_HISTORY_CSV_URLS에 넣으면 backfill이 1순위로 쓴다(쉼표로 여러 개 가능).
+# 날짜 로케일은 자동 인식하지만, 확실히 하려면 =TEXT(...,"yyyy-mm-dd")로 감싸도 된다.
+#
 # 채권(위 gsheet/INDEXCBOE:*)은 시트에 이 줄들을 추가해야 값이 들어온다:
 #   B열 티커       C열 =GOOGLEFINANCE(Bn,"price")
 #   INDEXCBOE:IRX  INDEXCBOE:FVX  INDEXCBOE:TNX  INDEXCBOE:TYX

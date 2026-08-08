@@ -309,6 +309,92 @@ def _fetch_stooq(stooq_sym: str, days: int):
     return rows[-days:] if days else rows
 
 
+def _sheet_date(cell: str):
+    """GOOGLEFINANCE 날짜 셀 → 'YYYY-MM-DD'. 못 읽으면 None.
+
+    게시 CSV의 날짜 형식은 시트 로케일을 탄다(한국어면 '2019. 1. 2', 영어면
+    '1/2/2019'). TEXT()로 감싸 ISO로 내리는 걸 권하지만, 안 감싼 시트도 받아준다."""
+    s = (cell or "").strip()
+    if not s:
+        return None
+    s = s.split(" ")[0] if "-" in s.split(" ")[0] else s   # '2019-01-02 00:00:00'
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})", s)
+    if m:
+        y, mo, d = m.groups()
+    else:
+        # '2019. 1. 2' (한국어 로케일)
+        m = re.match(r"^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})", s)
+        if m:
+            y, mo, d = m.groups()
+        else:
+            # '1/2/2019' — GOOGLEFINANCE 영어 로케일은 M/D/YYYY
+            m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", s)
+            if not m:
+                return None
+            mo, d, y = m.groups()
+    try:
+        return _date(int(y), int(mo), int(d)).isoformat()
+    except ValueError:
+        return None
+
+
+def parse_history_csv(text: str) -> dict:
+    """이력 탭 게시 CSV → {티커: [{date, close, volume}]}.
+
+    배치: 티커 하나가 2열을 쓴다. 1행에 티커명을 적고, 2행부터 아래로
+    GOOGLEFINANCE 기간 조회 결과(날짜, 종가)가 펼쳐진다.
+
+        A1: INDEXCBOE:TNX          C1: NYSEARCA:USO
+        A2: =GOOGLEFINANCE(...)    C2: =GOOGLEFINANCE(...)
+
+    GOOGLEFINANCE가 스스로 내는 헤더행('Date','Close')은 날짜로 안 읽히므로
+    자연히 걸러진다. 거래량은 이 경로로 오지 않아 0으로 둔다 — 시세·커브 신호는
+    살아나고, 거래량이 필요한 신호(다이버전스·반등품질)는 원래대로 스냅숏 누적분을
+    쓴다."""
+    rows = list(csv.reader(io.StringIO(text)))
+    if not rows:
+        return {}
+    header = rows[0]
+    out = {}
+    for col, cell in enumerate(header):
+        tk = (cell or "").strip()
+        if not _is_ticker(tk):
+            continue
+        series = {}
+        for r in rows[1:]:
+            if len(r) <= col + 1:
+                continue
+            day = _sheet_date(r[col])
+            close = _num(r[col + 1])
+            if day and close is not None:
+                series[day] = _norm_price(tk, close)
+        if series:
+            out[tk] = [{"date": d, "close": series[d], "volume": 0.0}
+                       for d in sorted(series)]
+    return out
+
+
+def fetch_sheet_history() -> dict:
+    """MARKET_HISTORY_CSV_URLS의 이력 탭들을 받아 합친다. 미설정·실패 시 {}."""
+    raw = (config.MARKET_HISTORY_CSV_URLS or "").strip()
+    urls = [u.strip() for u in raw.split(",") if u.strip()]
+    if not urls:
+        return {}
+    merged = {}
+    for url in urls:
+        try:
+            r = requests.get(url, headers=_UA, timeout=30)
+            r.raise_for_status()
+            got = parse_history_csv(r.text)
+        except Exception as e:
+            print(f"    · 이력 시트 실패 {url[:50]}…: {type(e).__name__} {str(e)[:60]}")
+            continue
+        print(f"    · 이력 시트 {url[:50]}… → {len(got)}종목")
+        for tk, rows in got.items():
+            merged.setdefault(tk, rows)
+    return merged
+
+
 def _read_by_date():
     by_date = {}
     if os.path.exists(_STORE):
@@ -454,9 +540,16 @@ def backfill_history(days: int = 1825):
     tickers = [s.split("/", 1)[1] for _, items in sections for s, _ in items
                if s.startswith("gsheet/")]
     by_date = _read_by_date()
+    # 구글 시트 이력 탭이 있으면 그게 1순위다. 구글 서버가 대신 받아오므로
+    # Yahoo 429·데이터센터 IP 차단에 걸리지 않는다 — stooq/Yahoo가 못 채우던
+    # 국채·원자재·환율이 이 경로로 들어온다.
+    sheet_hist = fetch_sheet_history()
+    if sheet_hist:
+        print(f"  📗 이력 시트에서 {len(sheet_hist)}종목 확보 (1순위 소스)")
     ok = 0
     for tk in tickers:
-        rows, src = _backfill_one(tk, days)
+        rows, src = (sheet_hist[tk], "시트 이력") if tk in sheet_hist \
+            else _backfill_one(tk, days)
         if not rows:
             print(f"  ⏭ {tk}: 백필 소스 없음")
             continue

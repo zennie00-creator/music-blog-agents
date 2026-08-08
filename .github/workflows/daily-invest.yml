@@ -55,6 +55,9 @@ jobs:
       NOTION_API_KEY: ${{ secrets.NOTION_API_KEY }}
       NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
       MARKET_CSV_URLS: ${{ secrets.MARKET_CSV_URLS }}  # 구글시트 웹 게시 CSV URL(들), 쉼표 구분
+      # 과거 이력 탭(GOOGLEFINANCE 기간 조회) 게시 CSV — backfill의 1순위 소스.
+      # 없으면 기존대로 stooq/Yahoo로 폴백한다(국채·원자재·환율은 대개 실패).
+      MARKET_HISTORY_CSV_URLS: ${{ secrets.MARKET_HISTORY_CSV_URLS }}
       USE_GROK: ${{ vars.USE_GROK }}  # Variables에 USE_GROK=0 넣으면 Grok 건너뛰고 Claude로 분석
     steps:
       - uses: actions/checkout@v4

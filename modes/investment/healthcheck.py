@@ -77,6 +77,17 @@ def run_check():
             _fail("구글시트 CSV: 0종목 — URL·게시 설정 확인 (웹에 게시 → CSV 인지)")
     else:
         _warn("MARKET_CSV_URLS 미설정 — 미국 시세는 gsheet/ 심볼로 안 들어옴")
+    if config.MARKET_HISTORY_CSV_URLS:
+        from modes.investment import sheet_source as _ss
+        hist = _ss.fetch_sheet_history()
+        if hist:
+            sample = ", ".join(f"{t}({len(r)}행)" for t, r in list(hist.items())[:3])
+            _ok(f"이력 시트: {len(hist)}종목 — {sample} …")
+        else:
+            _fail("이력 시트: 0종목 — 1행에 티커가 있는지, 게시가 CSV인지 확인")
+    else:
+        _warn("MARKET_HISTORY_CSV_URLS 미설정 — 백필이 stooq/Yahoo에만 의존 "
+              "(국채·원자재·환율은 대개 실패)")
     sections, _ = portfolio.load()
     for title, items in sections:
         print(f"  — {title}")
