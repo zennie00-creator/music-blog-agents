@@ -252,6 +252,14 @@ def read_page(page_id: str) -> str:
     return _blocks_to_text(page_id)
 
 
+def append_markdown(page_id: str, markdown_body: str):
+    """기존 페이지 끝에 마크다운을 덧붙인다.
+
+    Notion에는 '본문 통째로 교체' API가 없다. 토론 기록처럼 append-only인
+    데이터는 덧붙이기만 하면 되므로, 블록을 지웠다 다시 쓰는 비용을 피한다."""
+    _append_blocks(page_id, markdown_to_blocks(markdown_body))
+
+
 def fetch_page_by_title(title_contains: str, database_id: str = "") -> tuple:
     """제목에 문자열이 포함된 최신 페이지 → (제목, 본문텍스트, url). 없으면 ("","","")."""
     pages = list_pages(title_contains, database_id, limit=1)
