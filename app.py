@@ -28,7 +28,7 @@ MODE_VERSIONS = {
     "music":   "음악 v6 — 곡 선택·에세이 단계 진행",
     "workout": "운동 v23 — 코치 인사이트 로그·다른 코치 분석 원문 축적",
     "devlog":  "개발 v8 — 개발 메모 정리·이미지 발행",
-    "invest":  "투자 v1 — 브리핑 토론·일지 발행 (신규)",
+    "invest":  "투자 v2 — 토론 기록 Notion 저장·복원 (세션 끊겨도 유지)",
 }
 
 # ── 페이지 설정 ──────────────────────────────────────────
@@ -172,6 +172,8 @@ DEFAULTS = {
     "iv_fallback": [],      # 못 찾았을 때 보여줄 DB 최근 목록
     "iv_db_id": "",         # Secrets에 DB ID가 없을 때 앱에서 고른 값
     "iv_sources": [],       # 질문별 참고 자료 누적 [{q, md}] (근거를 되짚기 위함)
+    "iv_synced": 0,         # Notion 토론 페이지에 이미 저장한 발언 수 (append 커서)
+    "iv_restored": "",      # Notion에서 토론을 복원한 날짜 (하루 1회만 시도)
 }
 for k, v in DEFAULTS.items():
     if k not in st.session_state:

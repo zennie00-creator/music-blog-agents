@@ -14,7 +14,7 @@ import streamlit as st
 
 from core import notion
 from core.llm import ask_claude
-from modes.investment import discussion
+from modes.investment import discussion, discussion_store
 from modes.investment.journal_agent import write_journal
 from modes.investment.pipeline import load_thesis, load_trades
 
@@ -44,6 +44,12 @@ def _password_ok() -> bool:
             else:
                 st.error("암호가 맞지 않습니다.")
     return False
+
+
+def _briefs_only(pages):
+    """토론 기록 페이지를 후보에서 뺀다 — 같은 DB·같은 날짜라 검색에 함께 잡힌다."""
+    return [p for p in pages
+            if not p["title"].strip().startswith(discussion_store.PREFIX)]
 
 
 def _load_page(page: dict):
@@ -117,6 +123,39 @@ def _review_last():
         except Exception as e:
             review = f"(검토 실패: {e})"
     msgs.append((REVIEWER, review))
+
+
+def _sync_discussion():
+    """새 발언을 Notion 토론 페이지에 덧붙인다 (append 커서로 중복 방지).
+
+    Streamlit Cloud는 세션이 끊기면 대화가 사라지고, Actions는 이 페이지를 통해서만
+    오늘의 토론을 볼 수 있다. 실패해도 화면의 대화는 그대로 두고 경고만 띄운다."""
+    msgs = st.session_state.iv_messages
+    fresh = msgs[st.session_state.iv_synced:]
+    if not fresh:
+        return
+    try:
+        discussion_store.append(fresh)
+        st.session_state.iv_synced = len(msgs)
+    except Exception as e:
+        st.warning(f"토론을 Notion에 저장하지 못했습니다 (화면 기록은 유지): {e}")
+
+
+def _restore_discussion(day: str):
+    """세션이 끊겼다 돌아왔을 때 오늘의 토론을 Notion에서 되살린다.
+
+    하루에 한 번만 시도한다 — 매 rerun마다 조회하면 화면이 느려진다."""
+    if st.session_state.iv_restored == day or st.session_state.iv_messages:
+        return
+    st.session_state.iv_restored = day
+    try:
+        saved = discussion_store.load(day)
+    except Exception:
+        return          # 저장된 게 없거나 조회 실패 — 새 토론으로 시작
+    if saved:
+        st.session_state.iv_messages = saved
+        st.session_state.iv_synced = len(saved)
+        st.info(f"오늘 저장된 토론 {len(saved)}개 발언을 Notion에서 불러왔습니다.")
 
 
 def _publish_journal(memo: str, publish: bool):
@@ -202,17 +241,19 @@ def run():
         return
 
     day = st.date_input("날짜", value=_date.today()).isoformat()
+    _restore_discussion(day)
     col1, col2 = st.columns([1, 3])
     with col1:
         if st.button("브리핑 찾기", use_container_width=True):
             with st.spinner("Notion에서 찾는 중..."):
                 try:
-                    st.session_state.iv_candidates = notion.list_pages(day, limit=10)
+                    st.session_state.iv_candidates = _briefs_only(
+                        notion.list_pages(day, limit=10))
                     # 그 날짜로 못 찾으면 최근 목록을 보여준다 — 제목 형식이
                     # 예상과 다를 수 있으므로 실제로 무엇이 있는지 보여야 한다.
                     st.session_state.iv_fallback = (
                         [] if st.session_state.iv_candidates
-                        else notion.list_pages("", limit=10))
+                        else _briefs_only(notion.list_pages("", limit=10)))
                 except Exception as e:
                     st.error(f"조회 실패: {e}")
     with col2:
@@ -273,10 +314,12 @@ def run():
         st.caption("검토 의견이 아직 없습니다 (연결이 끊겼을 수 있습니다).")
         if st.button("검토 다시 실행"):
             _review_last()
+            _sync_discussion()
             st.rerun()
 
     if q := st.chat_input("질문이나 생각을 입력하세요"):
         _round(q)
+        _sync_discussion()
         st.rerun()
 
     if st.session_state.iv_messages:

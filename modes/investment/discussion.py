@@ -158,6 +158,22 @@ def load_today_brief(date: str = "") -> str:
     return ""
 
 
+def _sync_notion(state):
+    """아직 저장하지 않은 발언을 Notion 토론 페이지에 덧붙인다.
+
+    실패해도 토론은 계속된다 — 로컬 상태(discussions/)가 여전히 남으므로."""
+    from modes.investment import discussion_store
+    done = state.get("synced", 0)
+    fresh = state["messages"][done:]
+    if not fresh:
+        return
+    try:
+        discussion_store.append(fresh, topic=state["topic"])
+        state["synced"] = len(state["messages"])
+    except Exception as e:
+        print(f"  ⚠️ Notion 토론 저장 실패 (로컬에는 저장됨): {e}")
+
+
 def _maybe_compact(state):
     if len(state["messages"]) < COMPACT_TRIGGER:
         return
@@ -169,6 +185,10 @@ def _maybe_compact(state):
         max_tokens=2048,
     )
     state["messages"] = tail
+    # 압축은 Notion 저장 뒤에 일어난다(아래 discuss 루프 순서) — 남은 발언은 이미
+    # 전부 저장됐으므로 커서를 길이에 맞춰 되돌린다. 안 그러면 다음 라운드에
+    # 저장된 발언을 다시 덧붙인다.
+    state["synced"] = len(state["messages"])
 
 
 def _archive(state, summary: str):
@@ -253,12 +273,38 @@ def _research(prompt: str):
     return "Claude(리서치)", ask_claude(system, prompt + note, max_tokens=2048)
 
 
+def _notion_insights(date: str) -> str:
+    """Notion에 저장된 오늘의 토론 → 일지용 텍스트. 없거나 실패하면 빈 문자열.
+
+    Actions는 매 실행이 새 컨테이너라 discussions/가 존재하지 않는다. 폰(Streamlit)에서
+    한 토론이 다음 날 아침 일지에 반영되려면 이 경로가 유일한 통로다."""
+    from modes.investment import discussion_store
+    parts = []
+    for topic, msgs in discussion_store.load_day(date):
+        chunk = [f"[토론 주제] {topic or '(오늘의 토론)'}"]
+        summaries = [t for s, t in msgs if s == discussion_store.SUMMARY_SPEAKER]
+        if summaries:
+            chunk.append(f"(마무리 요약) {summaries[-1]}")
+        talk = [(s, t) for s, t in msgs if s != discussion_store.SUMMARY_SPEAKER]
+        chunk += [f"[{s}] {t}" for s, t in talk[-TAIL_KEEP:]]
+        parts.append("\n".join(chunk))
+    return "\n\n".join(parts)
+
+
 def today_insights(date: str = "") -> str:
     """오늘 진행한 토론의 요약·발언 — 투자 일지에 반영할 재료. 없으면 빈 문자열.
 
-    discussions/*.json 중 오늘 갱신된 것만 모은다."""
+    Notion을 먼저 본다(폰·Actions 공용 저장소). 로컬 CLI 토론만 있는 경우를 위해
+    discussions/*.json도 이어서 확인한다."""
     from datetime import date as _d
     date = date or _d.today().isoformat()
+    try:
+        found = _notion_insights(date)
+    except Exception as e:
+        print(f"  ⚠️ Notion 토론 조회 실패 (로컬 기록만 확인): {e}")
+        found = ""
+    if found:
+        return found
     if not os.path.isdir(STATE_DIR):
         return ""
     parts = []
@@ -335,8 +381,11 @@ def discuss(topic: str, thesis: str = "", brief: str = ""):
         state["messages"].append(["Claude", claude_review])
         print(f"\n[Claude]\n{claude_review}\n")
 
+        # 라운드마다 저장 — 중간에 끊겨도 이어서 가능.
+        # Notion을 먼저 밀어 넣어야 압축으로 잘려 나가는 발언이 유실되지 않는다.
+        _sync_notion(state)
         _maybe_compact(state)
-        _save_state(state)  # 라운드마다 저장 — 중간에 끊겨도 이어서 가능
+        _save_state(state)
 
         try:
             user_input = input("나> ").strip()
@@ -355,6 +404,14 @@ def discuss(topic: str, thesis: str = "", brief: str = ""):
         max_tokens=4096,
     )
     print(f"\n{summary}")
+    _sync_notion(state)
     _save_state(state)
     _archive(state, summary)
+    try:
+        from modes.investment import discussion_store
+        url = discussion_store.save_summary(summary, topic=state["topic"])
+        if url:
+            print(f"🗣️ Notion 토론 기록: {url}")
+    except Exception as e:
+        print(f"  ⚠️ Notion 요약 저장 실패: {e}")
     return summary
