@@ -124,14 +124,26 @@ def parse_market_csv(text: str) -> dict:
     '티커 패턴인 첫 셀 + 오른쪽 3칸' 위치 규칙으로 읽는다. 헤더가 있는 시트는
     열을 어떻게 배치해도 정확히 읽히고, 헤더가 없던 기존 시트는 동작이 안 바뀐다.
     """
-    out = {}
-    header = None
-    for row in csv.reader(io.StringIO(text)):
-        cells = [c.strip() for c in row]
+    rows = [[c.strip() for c in r] for r in csv.reader(io.StringIO(text))]
+    rows = [r for r in rows if any(r)]        # 빈 줄 제거
+    if not rows:
+        return {}
+
+    header, start = None, 0
+    if not any(_is_ticker(c) for c in rows[0]):
+        # 첫 줄에 티커가 없다 = 헤더 행이다. 헤더가 있는 시트는 열 배치가
+        # 위치 규칙과 다를 수 있으므로, 헤더를 못 읽으면 추측하지 않고 포기한다.
+        # 추측했다가 실제로 전일비를 가격으로 저장한 적이 있다(2026-08-09):
+        # S&P 7757.64 → 0.62, 종목명이 대문자인 행은 종목명이 티커로 들어갔다.
+        header = _header_map(rows[0])
+        start = 1
         if header is None:
-            header = _header_map(cells)
-            if header:
-                continue                      # 헤더 행 자체는 데이터가 아니다
+            print("  ⚠️ 첫 줄을 헤더로 읽지 못했습니다 — 열 이름을 확인하세요. "
+                  f"실제 첫 줄: {rows[0][:6]}")
+            return {}
+
+    out = {}
+    for cells in rows[start:]:
         if header:
             # 헤더가 있으면 티커도 지정된 열에서 읽는다. '첫 티커 같은 셀'을 찾으면
             # 종목명이 대문자인 줄(IRX, SPCX 등)에서 종목명을 티커로 집는다.
@@ -267,6 +279,31 @@ def _load_store():
     return hist
 
 
+_SANITY_MOVE = 0.5      # 하루 ±50%를 넘는 변동
+_SANITY_SHARE = 0.3     # 이 비율 넘는 종목이 그러면 파싱이 어긋난 것으로 본다
+
+
+def _plausible(snapshot: dict, prior_close: dict) -> bool:
+    """스냅숏이 직전 종가 대비 상식적인지. 어긋나면 False.
+
+    열을 잘못 집으면 값이 전부 그럴듯하게 '작은 숫자'가 된다 — 실제로 전일비를
+    가격으로 저장해 S&P가 7757.64에서 0.62가 된 적이 있다(2026-08-09). 개별 종목의
+    큰 변동은 있을 수 있지만 여러 종목이 동시에 반토막 나는 일은 파싱 오류뿐이다."""
+    checked = [(tk, v["price"], prior_close[tk]) for tk, v in snapshot.items()
+               if tk in prior_close and prior_close[tk]]
+    if len(checked) < 5:
+        return True                      # 비교 대상이 적으면 판단하지 않는다
+    odd = [(tk, c, pc) for tk, c, pc in checked
+           if abs(c / float(pc) - 1) > _SANITY_MOVE]
+    if len(odd) / len(checked) <= _SANITY_SHARE:
+        return True
+    print(f"  🚨 스냅숏 저장 취소 — {len(odd)}/{len(checked)}종목이 직전 종가 대비 "
+          f"±{_SANITY_MOVE:.0%}를 넘습니다. 열 배치가 어긋났을 가능성이 큽니다.")
+    for tk, c, pc in odd[:4]:
+        print(f"     · {tk}: {pc} → {c}")
+    return False
+
+
 def _save_today(snapshot: dict, today: str):
     """오늘 스냅숏을 저장소에 기록 (같은 날짜는 덮어씀).
 
@@ -291,6 +328,8 @@ def _save_today(snapshot: dict, today: str):
     for d in sorted(existing):
         for tk, cv in existing[d].items():
             prior_close[tk] = cv[0] if isinstance(cv, list) else cv
+    if not _plausible(snapshot, prior_close):
+        return                    # 통째로 어긋난 스냅숏 — 좋은 이력을 덮지 않는다
     prices = {}
     for tk, v in snapshot.items():
         c = v["price"]
