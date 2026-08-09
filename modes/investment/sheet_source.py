@@ -45,6 +45,18 @@ def _urls():
     return [u.strip() for u in raw.split(",") if u.strip()]
 
 
+def csv_text(r) -> str:
+    """응답 본문을 UTF-8로 읽는다.
+
+    requests는 Content-Type에 charset이 없으면 text/*를 ISO-8859-1로 디코딩한다
+    (RFC 2616). 구글 게시 CSV는 UTF-8인데 charset을 안 붙일 때가 있어, 한글 헤더
+    '종목명,현재가,티커'가 'ì¢ëª©ëª,í˜„ìž¬ê°€,티커'류로 깨진다. 그러면 헤더 인식이
+    실패하고 위치 규칙으로 폴백해 전일비를 가격으로 저장한다 — 2026-08-09에
+    실제로 그렇게 이력이 오염됐다. 티커는 ASCII라 멀쩡히 살아남기 때문에
+    '그럴듯하게 잘못된' 결과가 나와 눈으로는 발견되지 않는다."""
+    return r.content.decode("utf-8", errors="replace")
+
+
 def _num(s):
     """CSV 셀 → float. '#N/A'·''·'Loading...'·콤마 등은 None(거래량은 0)."""
     if s is None:
@@ -236,13 +248,14 @@ def fetch_snapshot() -> dict:
     for url in urls:
         try:
             r = requests.get(url, headers=_UA, timeout=30)
-            print(f"    · GET {url[:55]}… → HTTP {r.status_code}, {len(r.text)}바이트")
+            body = csv_text(r)
+            print(f"    · GET {url[:55]}… → HTTP {r.status_code}, {len(body)}자")
             r.raise_for_status()
-            parsed = parse_market_csv(r.text)
+            parsed = parse_market_csv(body)
             if parsed:
                 snap.update(parsed)
             else:
-                head = r.text[:150].replace("\n", "⏎")
+                head = body[:150].replace("\n", "⏎")
                 print(f"    ⚠️ 0종목 파싱됨 — CSV가 아닐 수 있음. 응답 앞부분: {head!r}")
         except Exception as e:
             print(f"    ⚠️ 수집 실패: {e}")
@@ -543,7 +556,7 @@ def fetch_sheet_history() -> dict:
         try:
             r = requests.get(url, headers=_UA, timeout=30)
             r.raise_for_status()
-            got = parse_history_csv(r.text)
+            got = parse_history_csv(csv_text(r))
         except Exception as e:
             print(f"    · 이력 시트 실패 {url[:50]}…: {type(e).__name__} {str(e)[:60]}")
             continue

@@ -107,7 +107,7 @@ def _dump_published_csv(lines: int = 6):
         except Exception as e:
             _fail(f"     받기 실패: {type(e).__name__} {str(e)[:70]}")
             continue
-        rows = list(_csv.reader(_io.StringIO(r.text)))[:lines]
+        rows = list(_csv.reader(_io.StringIO(sheet_source.csv_text(r))))[:lines]
         if not rows:
             _warn("     빈 응답 — 게시가 CSV 형식인지 확인")
             continue
