@@ -74,26 +74,76 @@ def _is_ticker(cell: str) -> bool:
     return bool(_TICKER_RE.match(cell)) and any(c.isalpha() for c in cell)
 
 
+# 헤더 이름 → 의미. 시트마다 열 순서가 다를 수 있어 1행 헤더가 있으면 그걸 따른다.
+_HEADER_KEYS = {
+    "ticker": ("티커", "심볼", "종목코드", "ticker", "symbol", "code"),
+    "price": ("현재가", "종가", "가격", "price", "close", "last"),
+    "changepct": ("전일비", "등락", "변동", "change", "chg", "pct"),
+    "volume": ("거래량", "volume", "vol"),
+}
+
+
+def _header_map(cells):
+    """헤더 행이면 {의미: 열번호}, 아니면 None.
+
+    티커 열 위치를 이름으로 알아내면 '티커 오른쪽이 현재가'라는 위치 가정을 안 써도
+    된다. 실제로 시트가 (종목명, 현재가, 티커, 전일비) 순인 경우가 있는데, 위치로만
+    읽으면 전일비를 현재가로 집어 조용히 틀린 값이 들어간다 — 둘 다 숫자라
+    값만 봐서는 구분이 불가능하다."""
+    mapping = {}
+    for i, c in enumerate(cells):
+        low = c.strip().lower()
+        if not low:
+            continue
+        for role, names in _HEADER_KEYS.items():
+            if role in mapping:
+                continue
+            if any(n in low for n in names):
+                mapping[role] = i
+                break
+    # 티커와 현재가를 모두 짚어내야 신뢰할 수 있는 헤더다
+    return mapping if "ticker" in mapping and "price" in mapping else None
+
+
 def parse_market_csv(text: str) -> dict:
     """게시 CSV 텍스트 → {티커: {price, changepct, volume}}.
 
-    티커 열을 자동 탐지한다 — 시트 앞에 빈 열이나 종목명 열이 있어도
-    (예: ',INDEXSP:.INX,7443.28,...') 티커 패턴인 첫 셀부터 읽는다.
-    헤더·깨진 줄은 건너뜀.
+    1행에 헤더(티커·현재가…)가 있으면 열 순서를 그대로 따르고, 없으면 기존처럼
+    '티커 패턴인 첫 셀 + 오른쪽 3칸' 위치 규칙으로 읽는다. 헤더가 있는 시트는
+    열을 어떻게 배치해도 정확히 읽히고, 헤더가 없던 기존 시트는 동작이 안 바뀐다.
     """
     out = {}
+    header = None
     for row in csv.reader(io.StringIO(text)):
         cells = [c.strip() for c in row]
-        ti = next((i for i, c in enumerate(cells) if _is_ticker(c)), None)
+        if header is None:
+            header = _header_map(cells)
+            if header:
+                continue                      # 헤더 행 자체는 데이터가 아니다
+        if header:
+            # 헤더가 있으면 티커도 지정된 열에서 읽는다. '첫 티커 같은 셀'을 찾으면
+            # 종목명이 대문자인 줄(IRX, SPCX 등)에서 종목명을 티커로 집는다.
+            i = header["ticker"]
+            ti = i if i < len(cells) and _is_ticker(cells[i]) else None
+        else:
+            ti = next((i for i, c in enumerate(cells) if _is_ticker(c)), None)
         if ti is None:
-            continue  # 티커 없는 줄(헤더·빈줄·종목명만)
-        price = _num(cells[ti + 1]) if len(cells) > ti + 1 else None
+            continue  # 헤더·빈줄·티커 없는 줄
+
+        def at(role, fallback_offset):
+            """헤더가 있으면 지정된 열, 없으면 티커 기준 상대 위치."""
+            i = header.get(role) if header else None
+            if i is None:
+                i = ti + fallback_offset
+            return _num(cells[i]) if 0 <= i < len(cells) else None
+
+        price = at("price", 1)
         if price is None:
             continue
         out[cells[ti]] = {
             "price": _norm_price(cells[ti], price),
-            "changepct": _num(cells[ti + 2]) if len(cells) > ti + 2 else None,
-            "volume": (_num(cells[ti + 3]) if len(cells) > ti + 3 else None) or 0.0,
+            "changepct": at("changepct", 2),
+            "volume": at("volume", 3) or 0.0,
         }
     return out
 
