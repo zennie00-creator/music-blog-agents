@@ -54,6 +54,19 @@ USER_TEMPLATE = """이번 주 회고를 작성해 주세요. 오늘: {today}
 ## 신호 돌아보기
 (이번 주 떴던 신호들과 그 후 실제 움직임. 성적표 데이터가 부족하면 부족하다고)
 
+## 로직 정교화 후보
+(이번 주 토론·일지에서 나온 '프로그램 반영 후보'를 모아 한자리에 정리.
+ 토론 페이지에 그 섹션이 있으면 그대로 가져오고, 없어도 이번 주 논의에서
+ 전제·워치리스트·신호 모듈을 손볼 이유가 보였다면 직접 뽑을 것.
+ 각 항목은 [무엇을] → [왜] → [어떻게 검증] 형식으로. 예:
+ - 금-실질금리 상관 → 금이 위험자산처럼 움직인다는 관찰이 반복됨 →
+   금 이력 3개월 누적 후 S&P·실질금리와의 상관 재측정
+ 반영할 것이 없으면 '없음' 한 줄. 억지로 만들지 말 것)
+
+## 아직 판정 못 한 가설
+(이번 주에 세웠지만 데이터가 없어 참·거짓을 못 가린 주장. 무엇이 있어야
+ 판정되는지 함께 적을 것 — 다음 주에 그 데이터가 생겼는지 확인하기 위함)
+
 ## 다음 주 체크포인트
 (이벤트·지표·감시 레벨 불릿 3~5개)"""
 
@@ -64,8 +77,37 @@ def _strip_charts(text: str) -> str:
     return re.split(r"\n## 차트\b", text)[0]
 
 
-def collect_week_docs(today: date):
-    """지난 LOOKBACK_DAYS일의 일지/브리핑 파일을 날짜순으로 모은다."""
+_DATE_IN_TITLE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def _notion_week_docs(today: date):
+    """Notion에 발행된 지난 7일의 브리핑·일지·토론을 모은다.
+
+    로컬 journals/ 폴더는 .gitignore 대상이고 Actions는 매 실행이 새 컨테이너라
+    항상 비어 있었다 — 그래서 주간 회고가 매주 '일지가 없습니다'로 끝났다
+    (2026-08-08 실행 로그로 확인). 발행된 페이지가 단일 진실이므로 거기서 읽는다.
+    토론 페이지도 포함한다: 회고가 판단의 근거까지 되짚어야 로직이 정교해진다."""
+    from core import notion
+    cutoff = (today - timedelta(days=LOOKBACK_DAYS)).isoformat()
+    docs = []
+    for page in notion.list_pages("", limit=40):     # 최신순
+        title = page["title"]
+        m = _DATE_IN_TITLE.search(title)
+        if not m or m.group(1) < cutoff:
+            continue
+        try:
+            body = _strip_charts(notion.read_page(page["id"]))[:MAX_DOC_CHARS]
+        except Exception as e:
+            print(f"  ⚠️ Notion 페이지 읽기 실패 ({title[:30]}): {e}")
+            continue
+        if body.strip():
+            docs.append((title, body))
+    docs.reverse()                                    # 오래된 것부터
+    return docs
+
+
+def _local_week_docs(today: date):
+    """로컬 journals/ 폴더 (로컬 실행용 폴백)."""
     docs = []
     if not os.path.isdir(JOURNAL_DIR):
         return docs
@@ -79,6 +121,19 @@ def collect_week_docs(today: date):
             body = _strip_charts(f.read())[:MAX_DOC_CHARS]
         docs.append((name, body))
     return docs
+
+
+def collect_week_docs(today: date):
+    """지난 LOOKBACK_DAYS일의 일지·브리핑·토론. Notion 우선, 로컬 폴백."""
+    try:
+        docs = _notion_week_docs(today)
+    except Exception as e:
+        print(f"  ⚠️ Notion 조회 실패 (로컬 폴더 확인): {e}")
+        docs = []
+    if docs:
+        print(f"  📚 Notion에서 {len(docs)}건 수집")
+        return docs
+    return _local_week_docs(today)
 
 
 def run_weekly(publish: bool = True, save_local: bool = True) -> dict:
