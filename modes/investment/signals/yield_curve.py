@@ -60,13 +60,50 @@ def _bond_yields(ctx):
     return out
 
 
-def _spread_line(label, a, b, invert_warn, normal_note, invert_note):
+def _classify(long_leg, short_leg, long_name, short_name):
+    """스프레드 변화를 불/베어 × 스티프닝/플래트닝으로 나눈다.
+
+    '확대/축소'만으로는 해석이 안 된다. 같은 스티프닝이라도 단기가 무너져서인지
+    장기가 올라서인지에 따라 의미가 정반대다:
+      · 불 스티프닝(단기 급락) — 인하 기대 주도. 역사적으로 침체 직전 국면
+      · 베어 스티프닝(장기 급등) — 인플레·재정·텀프리미엄 요구
+    누가 주도했는지는 두 만기의 bp 변화 크기로 판정한다."""
+    dl = (long_leg["now"] - long_leg["ago"]) * 100      # bp
+    ds = (short_leg["now"] - short_leg["ago"]) * 100
+    spread_bp = dl - ds
+    detail = f"{short_name} {ds:+.0f}bp, {long_name} {dl:+.0f}bp"
+    if abs(spread_bp) < 2:      # 노이즈 구간 — 방향을 단정하지 않는다
+        return None, detail
+    steepening = spread_bp > 0
+    # 주도한 쪽 = 절대 변화가 큰 만기
+    long_led = abs(dl) >= abs(ds)
+    if steepening:
+        if long_led and dl > 0:
+            return ("🐻 베어 스티프닝 (장기 주도) — 인플레·재정·텀프리미엄 요구. "
+                    "연준이 단기를 묶은 채 시장이 장기를 올리는 국면", detail)
+        if not long_led and ds < 0:
+            return ("🐂 불 스티프닝 (단기 주도) — 인하 기대 주도. "
+                    "역전 해소기라면 침체 선행 경계 구간", detail)
+        return ("스티프닝 — 주도 만기가 뚜렷하지 않음", detail)
+    if long_led and dl < 0:
+        return ("🐂 불 플래트닝 (장기 하락 주도) — 성장·인플레 기대 둔화", detail)
+    if not long_led and ds > 0:
+        return ("🐻 베어 플래트닝 (단기 상승 주도) — 긴축 기대 강화", detail)
+    return ("플래트닝 — 주도 만기가 뚜렷하지 않음", detail)
+
+
+def _spread_line(label, a, b, invert_warn, normal_note, invert_note,
+                 long_name="", short_name=""):
     now = a["now"] - b["now"]
     ago = a["ago"] - b["ago"]
     direction = "확대" if now > ago else ("축소" if now < ago else "유지")
     note = invert_note if now < 0 else normal_note
     warn = " 🚨" if (now < 0 and invert_warn) else ""
-    return (f"- {label}: {now:+.2f}%p (20일 전 {ago:+.2f}%p → {direction}){warn} — {note}")
+    line = f"- {label}: {now:+.2f}%p (20일 전 {ago:+.2f}%p → {direction}){warn} — {note}"
+    if long_name:
+        kind, detail = _classify(a, b, long_name, short_name)
+        line += f"\n  - {kind} ({detail})" if kind else f"\n  - 변화 미미 ({detail})"
+    return line
 
 
 def run(ctx):
@@ -88,6 +125,7 @@ def run(ctx):
             "미 10년-3개월 (연준 침체지표)", us10, us3m, invert_warn=True,
             normal_note="정상 커브. 연준 모델이 침체확률 산출에 쓰는 기준 스프레드",
             invert_note="역전 상태 — 침체 선행 신호. 역전 '해소' 국면이 역사적으로 더 위험",
+            long_name="10년", short_name="3개월",
         ))
     if us2 and us10:
         lines.append(_spread_line(
@@ -100,6 +138,7 @@ def run(ctx):
             "미 10s30s (30년-10년)", us30, us10, invert_warn=False,
             normal_note="장기 구간 정상. 급격한 스티프닝은 재정·수급 우려 반영",
             invert_note="장기 구간 역전 — 초장기 수요 쏠림",
+            long_name="30년", short_name="10년",
         ))
     if kr10 and us10:
         lines.append(_spread_line(
