@@ -58,15 +58,27 @@ def _num(s):
         return None
 
 
-# CBOE 금리지수는 GOOGLEFINANCE가 금리×10으로 준다(TNX 45.4 = 4.54%).
-# 시트에서 이미 ÷10 했으면 값이 ≤15라 건드리지 않음(자동 적응).
+# CBOE 금리지수는 GOOGLEFINANCE가 금리×10으로 준다(TNX 46.6 = 4.66%). 항상 ÷10 한다.
+#
+# 예전에는 '값이 15보다 클 때만' 나눴다. 시트에서 이미 ÷10 한 경우를 자동으로
+# 넘기려는 의도였지만, 금리가 1.5% 밑으로 가면 지수값이 15 이하가 되어 보정이
+# 걸리지 않는다 — 1.4%가 14%로 기록된다. 2020~21년 3개월물은 0.05% 수준이었으니
+# 가상의 위험이 아니고, 하필 완화 사이클(금리 커브가 가장 중요한 국면)에 터진다.
+# GOOGLEFINANCE는 항상 ×10을 주므로 조건 없이 나누는 쪽이 안전하다.
+# → 시트에서는 ÷10 하지 말 것. 원본 그대로 두면 된다.
 _CBOE_YIELD = {"INDEXCBOE:IRX", "INDEXCBOE:FVX", "INDEXCBOE:TNX", "INDEXCBOE:TYX"}
+_YIELD_SANE_MAX = 20.0     # 미 국채가 이 이상이면 소스나 배치가 잘못된 것
 
 
 def _norm_price(ticker: str, price):
-    if ticker in _CBOE_YIELD and price is not None and price > 15:
-        return price / 10
-    return price
+    if ticker not in _CBOE_YIELD or price is None:
+        return price
+    y = price / 10
+    if y > _YIELD_SANE_MAX:
+        # 시트가 이미 나눈 값을 또 나누면 반대로 10배 작아진다. 어느 쪽이든
+        # 조용히 넘기지 않고 알린다 — 커브 신호가 통째로 틀어지는 값이다.
+        print(f"  ⚠️ {ticker} 금리 {y:.2f}% — 비정상. 시트에서 ÷10 하고 있지 않은지 확인")
+    return y
 
 
 def _is_ticker(cell: str) -> bool:
