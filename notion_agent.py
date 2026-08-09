@@ -238,9 +238,24 @@ def has_settings_credentials():
 
 
 def _rich_long(text):
-    """rich_text 조각당 2000자 제한을 피해 여러 조각으로 나눈다."""
-    return ([{"type": "text", "text": {"content": text[i:i + 2000]}}
-             for i in range(0, len(text), 2000)] or _rich(""))
+    """rich_text 조각당 2000자 제한을 피해 여러 조각으로 나눈다.
+
+    Notion의 2000자 제한은 UTF-16 코드유닛 기준이라, 이모지 같은 BMP 밖
+    문자는 하나가 2로 센다. 파이썬 글자 수로 자르면 이모지 섞인 원문에서
+    "length should be ≤ 2000, instead was 2002"로 저장이 깨진다(실사용 버그).
+    """
+    chunks, cur, units = [], [], 0
+    for ch in text:
+        u = 2 if ord(ch) > 0xFFFF else 1
+        if units + u > 2000:
+            chunks.append("".join(cur))
+            cur, units = [], 0
+        cur.append(ch)
+        units += u
+    if cur:
+        chunks.append("".join(cur))
+    return ([{"type": "text", "text": {"content": c}} for c in chunks]
+            or _rich(""))
 
 
 def _find_settings():
