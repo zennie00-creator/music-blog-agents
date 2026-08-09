@@ -26,7 +26,7 @@ from core import draft
 APP_VERSION = "2026-08-05 · v23"
 MODE_VERSIONS = {
     "music":   "음악 v6 — 곡 선택·에세이 단계 진행",
-    "workout": "운동 v23 — 코치 인사이트 로그·다른 코치 분석 원문 축적",
+    "workout": "운동 v23.1 — Notion 저장 실패 시 실제 이유 표시",
     "devlog":  "개발 v8 — 개발 메모 정리·이미지 발행",
     "invest":  "투자 v2 — 토론 기록 Notion 저장·복원 (세션 끊겨도 유지)",
 }
@@ -315,7 +315,9 @@ with st.sidebar:
                         st.success("✅ 원문을 보관했어요 — 다음 일지 분석부터 코치가 읽습니다.")
                         st.rerun()
                     else:
-                        st.error("보관에 실패했어요. Notion 연결을 확인해 주세요.")
+                        st.error("보관에 실패했어요 — "
+                                 + (notion_agent.store_error
+                                    or "Notion 연결을 확인해 주세요."))
 
             # 지금 쌓여 있는 원문 목록. 이 expander는 접혀 있어도 매 렌더 실행되므로
             # 세션에 캐시해 Notion 호출을 1회로 묶는다 (보관·삭제 후에만 무효화).
@@ -334,7 +336,8 @@ with st.sidebar:
                             st.session_state.pop("sb_insights", None)
                             st.rerun()
                         else:
-                            st.error("삭제에 실패했어요.")
+                            st.error("삭제에 실패했어요 — "
+                                     + (notion_agent.store_error or "원인 미상"))
 
             st.divider()
             st.markdown("**② 훈련 노트로 정리** — 처음 한 번 / 큰 변화가 있을 때")

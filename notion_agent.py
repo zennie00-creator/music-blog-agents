@@ -363,6 +363,26 @@ _STORES = {
 
 _store_loc = {}  # title -> (page_id, code_block_id) 캐시
 
+# 마지막 저장 실패의 실제 이유. UI가 "실패했어요"만 보여주면 원인을 알 수 없어
+# (부모 미설정? 권한? API 에러?) 진단이 안 되기에, 실패 지점마다 여기 남긴다.
+store_error = ""
+
+
+def _fail(msg):
+    """실패 이유를 기록하고 False를 반환한다 (return _fail(...) 꼴로 쓴다)."""
+    global store_error
+    store_error = msg
+    return False
+
+
+def _api_reason(r):
+    """Notion 에러 응답에서 사람이 읽을 요지만 뽑는다."""
+    try:
+        j = r.json()
+        return f"{r.status_code} {j.get('code', '')}: {(j.get('message') or '')[:160]}"
+    except Exception:
+        return f"HTTP {r.status_code}"
+
 
 def _find_store(title):
     """기록 페이지의 (page_id, code_block_id). 없으면 (None, None)."""
@@ -411,18 +431,23 @@ def _load_store(title):
 
 def _write_store(title, items):
     """기록 배열을 코드 블록에 저장(없으면 페이지 생성). 성공하면 True."""
+    global store_error
+    store_error = ""
     payload = json.dumps(items, ensure_ascii=False, indent=2)
     _page_id, code_id = _find_store(title)
     if code_id:
         r = requests.patch(f"{API}/blocks/{code_id}", headers=_headers(),
                            json={"code": {"rich_text": _rich_long(payload)}},
                            timeout=20)
-        return r.status_code < 300
+        if r.status_code >= 300:
+            return _fail(f"기존 '{title}' 페이지 수정 실패 — {_api_reason(r)}")
+        return True
     env_key, icon, intro = _STORES[title]
     # 전용 환경변수 우선, 없으면 일반 발행 위치
     pid = (os.environ.get(env_key) or "").strip() or _parent_id()
     if not pid:
-        return False
+        return _fail(f"'{title}' 페이지를 만들 위치가 없어요 — Secrets에 "
+                     f"{env_key} 또는 NOTION_PARENT_ID를 설정해 주세요.")
     kind, title_prop = _resolve_parent(pid)
     children = [
         _paragraph(intro),
@@ -439,7 +464,8 @@ def _write_store(title, items):
     body["icon"] = {"type": "emoji", "emoji": icon}
     r = requests.post(f"{API}/pages", headers=_headers(), json=body, timeout=30)
     if r.status_code >= 300:
-        return False
+        return _fail(f"'{title}' 페이지 생성 실패 (부모 {kind}: {pid[:8]}…) — "
+                     f"{_api_reason(r)}")
     new_id = r.json().get("id")
     rb = requests.get(f"{API}/blocks/{new_id}/children?page_size=20",
                       headers=_headers(), timeout=20)
@@ -469,8 +495,8 @@ def append_coach_log(entry, keep=14):
         logs = [e for e in logs if not (date and e.get("date") == date)]
         logs.insert(0, entry)
         return _write_store(COACHLOG_TITLE, logs[:keep])
-    except Exception:
-        return False
+    except Exception as e:
+        return _fail(f"코치 로그 저장 중 오류 — {type(e).__name__}: {e}")
 
 
 # ── 코치 인사이트 로그 (다른 코치의 원문 축적) ───────────────────────
@@ -504,8 +530,8 @@ def append_insight(entry, keep=10):
                          and (e.get("text") or "").strip() == entry["text"])]
         items.insert(0, entry)
         return _write_store(INSIGHT_TITLE, items[:keep])
-    except Exception:
-        return False
+    except Exception as e:
+        return _fail(f"인사이트 저장 중 오류 — {type(e).__name__}: {e}")
 
 
 def delete_insight(date, source=""):
@@ -518,10 +544,10 @@ def delete_insight(date, source=""):
                 if not (e.get("date") == date
                         and (e.get("source") or "") == (source or ""))]
         if len(kept) == len(items):
-            return False
+            return _fail("지울 항목을 찾지 못했어요 (이미 지워졌을 수 있음).")
         return _write_store(INSIGHT_TITLE, kept)
-    except Exception:
-        return False
+    except Exception as e:
+        return _fail(f"인사이트 삭제 중 오류 — {type(e).__name__}: {e}")
 
 
 def publish(title, summary_lines, body_text, coach_text="",

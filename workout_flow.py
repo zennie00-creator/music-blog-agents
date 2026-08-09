@@ -723,6 +723,11 @@ def _save_coach_log():
         # 방금 저장한 오늘 항목이 다음 로드에 반영되도록 캐시를 갱신
         st.session_state.pop("wk_coach_log", None)
         st.caption("🗒 오늘 코치 대화를 로그에 남겼어요 — 다음 일지에서 이어집니다.")
+    else:
+        # 조용히 넘어가면 코칭 연속성이 끊긴 걸 아무도 모른다 — 이유를 보여준다
+        st.warning("🗒 코치 로그 저장에 실패했어요 — "
+                   + (notion_agent.store_error or "원인 미상")
+                   + " (일지 저장에는 영향 없습니다)")
 
 
 def _show_output():
