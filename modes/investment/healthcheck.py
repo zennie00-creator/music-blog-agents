@@ -88,6 +88,38 @@ def _probe_sources():
             _warn(f"[{label}] {symbol} — {desc}: 0행 (심볼 불인식 또는 차단)")
 
 
+def _dump_published_csv(lines: int = 6):
+    """게시된 CSV의 앞부분을 그대로 보여준다.
+
+    시트 화면과 게시본의 열 순서가 다를 수 있다 — 실제로 화면은 (종목명, 현재가,
+    티커, 전일비)인데 값은 정상 수집되고 있어, 게시되는 건 열을 재배치한 다른
+    탭임이 드러났다. 어느 탭이 게시됐는지 눈으로 추적하는 대신 원본을 찍는다.
+    파서는 '티커 바로 오른쪽 칸'을 현재가로 읽으므로 그 순서를 여기서 확인한다.
+    게시본은 이미 공개 URL이라 내용 노출 위험이 없다(URL 자체는 잘라서 표시)."""
+    import csv as _csv
+    import io as _io
+    from modes.investment import sheet_source
+    for url in sheet_source._urls():
+        print(f"  📄 게시본 앞부분 — {url[:60]}…")
+        try:
+            r = requests.get(url, headers=sheet_source._UA, timeout=30)
+            r.raise_for_status()
+        except Exception as e:
+            _fail(f"     받기 실패: {type(e).__name__} {str(e)[:70]}")
+            continue
+        rows = list(_csv.reader(_io.StringIO(r.text)))[:lines]
+        if not rows:
+            _warn("     빈 응답 — 게시가 CSV 형식인지 확인")
+            continue
+        for i, row in enumerate(rows):
+            cells = [c.strip() for c in row]
+            ti = next((j for j, c in enumerate(cells) if sheet_source._is_ticker(c)), None)
+            mark = f"  ← 티커 {ti}열, 현재가로 읽는 값: {cells[ti + 1]!r}" \
+                if ti is not None and len(cells) > ti + 1 else \
+                ("  ← 티커 없음(건너뜀)" if ti is None else "  ← 티커 오른쪽 칸 없음")
+            print(f"     {i}: {cells}{mark}")
+
+
 def run_check():
     print("\n🔧 투자 일지 헬스체크")
 
@@ -103,6 +135,7 @@ def run_check():
     print("\n[2] 시세 데이터 (portfolio.md 워치리스트)")
     if config.MARKET_CSV_URLS:
         from modes.investment import sheet_source
+        _dump_published_csv()
         snap = sheet_source.fetch_snapshot()
         if snap:
             _ok(f"구글시트 CSV: {len(snap)}종목 수신 (예: {', '.join(list(snap)[:3])} …)")

@@ -98,6 +98,59 @@ def parse_market_csv(text: str) -> dict:
     return out
 
 
+# 시트로는 못 받지만 러너에서는 직접 뚫리는 지표. 스냅숏에 끼워 넣으면 기존
+# 누적·이력 경로를 그대로 타므로 별도 저장 장치가 필요 없다.
+#   금: GOOGLEFINANCE가 귀금속을 지원하지 않고(CURRENCY:XAUUSD → #N/A) 시트의
+#   IMPORTDATA는 stooq·네이버에 막혔다. gold-api는 --check 프로브에서 러너 HTTP 200
+#   확인됨(2026-08-08). 온스당 현물($/oz)이며 COMEX 최근월물과는 베이시스만큼 차이.
+_DIRECT_SOURCES = [("XAUUSD", "https://api.gold-api.com/price/XAU")]
+
+
+def _fetch_direct() -> dict:
+    """시트 밖에서 직접 받는 지표 → parse_market_csv와 같은 형식. 실패분은 건너뜀.
+
+    응답 구조가 제공자마다 달라 키 이름을 가정하지 않는다. 'price'가 들어간 키의
+    숫자 중 상식적인 범위의 값을 집는다(Put/Call 파서와 같은 방식)."""
+    out = {}
+    for ticker, url in _DIRECT_SOURCES:
+        try:
+            r = requests.get(url, headers=_UA, timeout=15)
+            r.raise_for_status()
+            data = r.json()
+        except Exception as e:
+            print(f"    · 직접 수집 실패 {ticker}: {type(e).__name__} {str(e)[:60]}")
+            continue
+        found = []          # [(키, 값)] — 'price'가 들어간 키의 숫자 전부
+
+        def walk(o):
+            if isinstance(o, dict):
+                for k, v in o.items():
+                    if isinstance(v, (int, float)) and not isinstance(v, bool) \
+                            and "price" in str(k).lower() and 0 < v < 1e7:
+                        found.append((str(k).lower(), float(v)))
+                    else:
+                        walk(v)
+            elif isinstance(o, list):
+                for item in o:
+                    walk(item)
+
+        walk(data)
+        # 한 응답에 여러 자산이 실려 있을 수 있다(예: xauPrice와 xagPrice가 나란히).
+        # 티커의 자산코드가 키에 들어간 것을 우선하고, 없으면 정확히 'price'인 것,
+        # 그것도 없으면 첫 번째를 쓴다. 순서만 보고 고르면 은값을 금값으로 집는다.
+        code = ticker[:3].lower()
+        price = next((v for k, v in found if code in k),
+                     next((v for k, v in found if k == "price"),
+                          found[0][1] if found else None))
+        if price is None:
+            print(f"    · 직접 수집 {ticker}: 응답에서 가격을 못 찾음 "
+                  f"(후보 {len(found)}개)")
+            continue
+        out[ticker] = {"price": price, "changepct": None, "volume": 0.0}
+        print(f"    · 직접 수집 {ticker}: {price}")
+    return out
+
+
 def fetch_snapshot() -> dict:
     """설정된 CSV URL(들)을 받아 합친 스냅숏. 미설정/실패 시 부분/빈 dict.
 
@@ -119,6 +172,10 @@ def fetch_snapshot() -> dict:
                 print(f"    ⚠️ 0종목 파싱됨 — CSV가 아닐 수 있음. 응답 앞부분: {head!r}")
         except Exception as e:
             print(f"    ⚠️ 수집 실패: {e}")
+    # 시트에 없는 지표를 직접 채운다. 시트 값이 있으면 그쪽을 존중한다 —
+    # 나중에 시트에 추가하면 별도 조치 없이 시트가 우선이 된다.
+    for tk, v in _fetch_direct().items():
+        snap.setdefault(tk, v)
     return snap
 
 
