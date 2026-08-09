@@ -58,15 +58,27 @@ def _num(s):
         return None
 
 
-# CBOE 금리지수는 GOOGLEFINANCE가 금리×10으로 준다(TNX 45.4 = 4.54%).
-# 시트에서 이미 ÷10 했으면 값이 ≤15라 건드리지 않음(자동 적응).
+# CBOE 금리지수는 GOOGLEFINANCE가 금리×10으로 준다(TNX 46.6 = 4.66%). 항상 ÷10 한다.
+#
+# 예전에는 '값이 15보다 클 때만' 나눴다. 시트에서 이미 ÷10 한 경우를 자동으로
+# 넘기려는 의도였지만, 금리가 1.5% 밑으로 가면 지수값이 15 이하가 되어 보정이
+# 걸리지 않는다 — 1.4%가 14%로 기록된다. 2020~21년 3개월물은 0.05% 수준이었으니
+# 가상의 위험이 아니고, 하필 완화 사이클(금리 커브가 가장 중요한 국면)에 터진다.
+# GOOGLEFINANCE는 항상 ×10을 주므로 조건 없이 나누는 쪽이 안전하다.
+# → 시트에서는 ÷10 하지 말 것. 원본 그대로 두면 된다.
 _CBOE_YIELD = {"INDEXCBOE:IRX", "INDEXCBOE:FVX", "INDEXCBOE:TNX", "INDEXCBOE:TYX"}
+_YIELD_SANE_MAX = 20.0     # 미 국채가 이 이상이면 소스나 배치가 잘못된 것
 
 
 def _norm_price(ticker: str, price):
-    if ticker in _CBOE_YIELD and price is not None and price > 15:
-        return price / 10
-    return price
+    if ticker not in _CBOE_YIELD or price is None:
+        return price
+    y = price / 10
+    if y > _YIELD_SANE_MAX:
+        # 시트가 이미 나눈 값을 또 나누면 반대로 10배 작아진다. 어느 쪽이든
+        # 조용히 넘기지 않고 알린다 — 커브 신호가 통째로 틀어지는 값이다.
+        print(f"  ⚠️ {ticker} 금리 {y:.2f}% — 비정상. 시트에서 ÷10 하고 있지 않은지 확인")
+    return y
 
 
 def _is_ticker(cell: str) -> bool:
@@ -74,26 +86,76 @@ def _is_ticker(cell: str) -> bool:
     return bool(_TICKER_RE.match(cell)) and any(c.isalpha() for c in cell)
 
 
+# 헤더 이름 → 의미. 시트마다 열 순서가 다를 수 있어 1행 헤더가 있으면 그걸 따른다.
+_HEADER_KEYS = {
+    "ticker": ("티커", "심볼", "종목코드", "ticker", "symbol", "code"),
+    "price": ("현재가", "종가", "가격", "price", "close", "last"),
+    "changepct": ("전일비", "등락", "변동", "change", "chg", "pct"),
+    "volume": ("거래량", "volume", "vol"),
+}
+
+
+def _header_map(cells):
+    """헤더 행이면 {의미: 열번호}, 아니면 None.
+
+    티커 열 위치를 이름으로 알아내면 '티커 오른쪽이 현재가'라는 위치 가정을 안 써도
+    된다. 실제로 시트가 (종목명, 현재가, 티커, 전일비) 순인 경우가 있는데, 위치로만
+    읽으면 전일비를 현재가로 집어 조용히 틀린 값이 들어간다 — 둘 다 숫자라
+    값만 봐서는 구분이 불가능하다."""
+    mapping = {}
+    for i, c in enumerate(cells):
+        low = c.strip().lower()
+        if not low:
+            continue
+        for role, names in _HEADER_KEYS.items():
+            if role in mapping:
+                continue
+            if any(n in low for n in names):
+                mapping[role] = i
+                break
+    # 티커와 현재가를 모두 짚어내야 신뢰할 수 있는 헤더다
+    return mapping if "ticker" in mapping and "price" in mapping else None
+
+
 def parse_market_csv(text: str) -> dict:
     """게시 CSV 텍스트 → {티커: {price, changepct, volume}}.
 
-    티커 열을 자동 탐지한다 — 시트 앞에 빈 열이나 종목명 열이 있어도
-    (예: ',INDEXSP:.INX,7443.28,...') 티커 패턴인 첫 셀부터 읽는다.
-    헤더·깨진 줄은 건너뜀.
+    1행에 헤더(티커·현재가…)가 있으면 열 순서를 그대로 따르고, 없으면 기존처럼
+    '티커 패턴인 첫 셀 + 오른쪽 3칸' 위치 규칙으로 읽는다. 헤더가 있는 시트는
+    열을 어떻게 배치해도 정확히 읽히고, 헤더가 없던 기존 시트는 동작이 안 바뀐다.
     """
     out = {}
+    header = None
     for row in csv.reader(io.StringIO(text)):
         cells = [c.strip() for c in row]
-        ti = next((i for i, c in enumerate(cells) if _is_ticker(c)), None)
+        if header is None:
+            header = _header_map(cells)
+            if header:
+                continue                      # 헤더 행 자체는 데이터가 아니다
+        if header:
+            # 헤더가 있으면 티커도 지정된 열에서 읽는다. '첫 티커 같은 셀'을 찾으면
+            # 종목명이 대문자인 줄(IRX, SPCX 등)에서 종목명을 티커로 집는다.
+            i = header["ticker"]
+            ti = i if i < len(cells) and _is_ticker(cells[i]) else None
+        else:
+            ti = next((i for i, c in enumerate(cells) if _is_ticker(c)), None)
         if ti is None:
-            continue  # 티커 없는 줄(헤더·빈줄·종목명만)
-        price = _num(cells[ti + 1]) if len(cells) > ti + 1 else None
+            continue  # 헤더·빈줄·티커 없는 줄
+
+        def at(role, fallback_offset):
+            """헤더가 있으면 지정된 열, 없으면 티커 기준 상대 위치."""
+            i = header.get(role) if header else None
+            if i is None:
+                i = ti + fallback_offset
+            return _num(cells[i]) if 0 <= i < len(cells) else None
+
+        price = at("price", 1)
         if price is None:
             continue
         out[cells[ti]] = {
             "price": _norm_price(cells[ti], price),
-            "changepct": _num(cells[ti + 2]) if len(cells) > ti + 2 else None,
-            "volume": (_num(cells[ti + 3]) if len(cells) > ti + 3 else None) or 0.0,
+            "changepct": at("changepct", 2),
+            "volume": at("volume", 3) or 0.0,
         }
     return out
 
