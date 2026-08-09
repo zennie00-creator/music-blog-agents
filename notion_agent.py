@@ -448,11 +448,19 @@ def _write_store(title, items):
     """기록 배열을 코드 블록에 저장(없으면 페이지 생성). 성공하면 True."""
     global store_error
     store_error = ""
+    # 누적 상한 방어: 블록 하나의 rich_text는 조각 100개까지다. 지금 수치
+    # (10편×6000자 ≈ 33조각)로는 여유가 크지만, keep·항목 길이를 늘리면
+    # 조용히 벽에 닿는다 — 넘치면 가장 오래된 항목부터 떨어뜨린다.
     payload = json.dumps(items, ensure_ascii=False, indent=2)
+    frags = _rich_long(payload)
+    while len(frags) > 100 and len(items) > 1:
+        items = items[:-1]  # 최신이 앞이므로 끝(가장 오래된 것)부터
+        payload = json.dumps(items, ensure_ascii=False, indent=2)
+        frags = _rich_long(payload)
     _page_id, code_id = _find_store(title)
     if code_id:
         r = requests.patch(f"{API}/blocks/{code_id}", headers=_headers(),
-                           json={"code": {"rich_text": _rich_long(payload)}},
+                           json={"code": {"rich_text": frags}},
                            timeout=20)
         if r.status_code >= 300:
             return _fail(f"기존 '{title}' 페이지 수정 실패 — {_api_reason(r)}")
@@ -467,7 +475,7 @@ def _write_store(title, items):
     children = [
         _paragraph(intro),
         {"object": "block", "type": "code",
-         "code": {"rich_text": _rich_long(payload), "language": "json"}},
+         "code": {"rich_text": frags, "language": "json"}},
     ]
     if kind == "database":
         body = {"parent": {"database_id": pid},
