@@ -7,3 +7,4 @@
 {"date": "2026-08-06", "groups": {"down": ["gsheet/NASDAQ:LRCX", "gsheet/NASDAQ:AMAT", "gsheet/NASDAQ:SKHY", "gsheet/NYSE:JOBY", "gsheet/NASDAQ:ASML"], "up": ["gsheet/NYSE:COHR", "gsheet/NASDAQ:NVDA", "naver/000660"]}}
 {"date": "2026-08-07", "groups": {"up": ["gsheet/NASDAQ:ASML", "gsheet/NYSE:COHR", "gsheet/NYSE:JOBY"]}}
 {"date": "2026-08-08", "groups": {"up": ["gsheet/NASDAQ:ASML", "gsheet/NASDAQ:AMAT", "gsheet/NASDAQ:KLAC", "gsheet/NASDAQ:MSTR", "gsheet/NYSE:JOBY", "gsheet/NASDAQ:COIN", "gsheet/NYSE:COHR", "gsheet/NASDAQ:SPCX"]}}
+{"date": "2026-08-11", "groups": {"down": ["gsheet/NYSE:COHR", "gsheet/NASDAQ:AMAT", "gsheet/NASDAQ:NVDA", "gsheet/NASDAQ:KLAC", "gsheet/NASDAQ:SKHY", "gsheet/NASDAQ:MU", "gsheet/NASDAQ:LRCX"]}}
