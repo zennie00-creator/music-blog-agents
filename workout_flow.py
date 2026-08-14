@@ -261,8 +261,9 @@ def run():
                     splits_txt = st.text_area(
                         "구간 기록 (선택 · 적으면 코치가 구조까지 분석)",
                         key=f"splits_{i}",
-                        placeholder="예: 2분 6.1 / 10분 8.6 / 5분 9.2 / 15분 10.1 / 3분 6.1\n"
-                                    "(‘분 속도’ 순, km/h 붙여도 됨. 줄바꿈·쉼표·슬래시로 구분)")
+                        placeholder="예: 2분 6.1 / 10분 8.6 / 15분 10.1\n"
+                                    "거리로도: 10km/h 400m 7km/h 100m (시간 자동 역산)\n"
+                                    "범위도: 10분 7.2~9.0 (중간값으로 계산)")
                     parsed = workout_agent.parse_splits(splits_txt)
                     if parsed:
                         st.caption(

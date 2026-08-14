@@ -119,42 +119,85 @@ def workout_line(w):
 # ── 구간 기록(스플릿) ─────────────────────────────────────────────────
 # Whoop API는 구간별 스플릿을 주지 않는다. 트레드밀처럼 본인이 정확히 기억하는
 # 경우 직접 적게 해서, 코치가 워밍업/메인/쿨다운 구조까지 보고 분석하게 한다.
-_SPLIT_TIME = re.compile(r"(\d+(?:\.\d+)?)\s*(?:분|min(?:s|utes)?)", re.I)
-_SPLIT_SPEED = re.compile(r"(\d+(?:\.\d+)?)\s*(?:km/?h|kph|kmh)", re.I)
-_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# 구간 기록 토큰 — 한 청크 안에서 위치 순서대로 읽는다. 대안 순서가 곧
+# 우선순위다: 범위(7.2~9.0)를 먼저 잡아야 '-'가 두 숫자로 쪼개지지 않고,
+# 속도(kmh)를 거리(km)보다 먼저 봐야 'kmh'의 km이 거리로 오인되지 않는다.
+_SPLIT_TOKEN = re.compile(
+    r"(?P<rlo>\d+(?:\.\d+)?)\s*(?:~|–|-|to|에서)\s*"
+    r"(?P<rhi>\d+(?:\.\d+)?)\s*(?:kmh|kph)?"
+    r"|(?P<time>\d+(?:\.\d+)?)\s*(?:분|min(?:s|utes)?)"
+    r"|(?P<speed>\d+(?:\.\d+)?)\s*(?:kmh|kph)"
+    r"|(?P<distkm>\d+(?:\.\d+)?)\s*km\b"
+    r"|(?P<distm>\d+(?:\.\d+)?)\s*(?:m\b|미터)"
+    r"|(?P<num>\d+(?:\.\d+)?)",
+    re.I)
 
 
 def parse_splits(text):
     """'2분 6.1 / 10분 8.6km/h' 같은 자유 입력을 구간 목록으로 파싱한다.
 
-    반환: [{"minutes": float, "speed": float, "km": float}, ...]
-    분/속도 순서가 바뀌어도(6.1km/h 2분) 인식한다. 못 읽은 줄은 조용히 건너뛴다.
+    반환: [{"minutes", "speed", "km", (선택) "speed_label"}, ...]
+
+    v22의 '분+속도' 입력에 더해 (트레드밀 HIIT 실사용 요구):
+    - 속도+거리: '10km/h 400m' → 시간을 거리/속도로 역산
+    - 속도 범위: '7.2~9.0' '5.5 to 4.0' → 중간값으로 계산, 표기는 범위 그대로
+    - 한 청크에 여러 구간: '10km/h 400m 7km/h 100m' → 두 구간으로
+    분/속도 순서가 바뀌어도(6.1km/h 2분) 인식한다. 못 읽은 조각은 건너뛴다.
     """
     out = []
     # 'km/h'의 슬래시가 구간 구분자로 잘리지 않게 먼저 정규화한다
     norm = re.sub(r"km\s*/\s*h", "kmh", text or "", flags=re.I)
     for chunk in re.split(r"[\n,/·;]+", norm):
-        chunk = chunk.strip()
-        if not chunk:
+        if not chunk.strip():
             continue
-        t = _SPLIT_TIME.search(chunk)
-        s = _SPLIT_SPEED.search(chunk)
-        minutes = float(t.group(1)) if t else None
-        speed = float(s.group(1)) if s else None
-        if minutes is None or speed is None:
-            # 단위가 하나만 붙은 경우: 남은 숫자를 반대쪽 값으로 본다
-            used = {t.group(1) if t else None, s.group(1) if s else None}
-            rest = [n for n in _NUMBER.findall(chunk) if n not in used]
-            if minutes is None and speed is not None and rest:
-                minutes = float(rest[0])
-            elif speed is None and minutes is not None and rest:
-                speed = float(rest[0])
-            elif minutes is None and speed is None and len(rest) >= 2:
-                # 단위가 전혀 없으면 '분 속도' 순서로 가정
-                minutes, speed = float(rest[0]), float(rest[1])
-        if minutes and speed:
-            out.append({"minutes": round(minutes, 1), "speed": round(speed, 2),
-                        "km": round(speed * minutes / 60, 3)})
+        speed = None   # (값, 표기 라벨 또는 None)
+        qty = None     # ("time", 분) 또는 ("dist", km)
+        wild = None    # 단위 없는 숫자 — 다음 토큰이 역할을 정한다
+
+        def emit():
+            nonlocal speed, qty
+            s, label = speed
+            if qty[0] == "time":
+                minutes, km = qty[1], s * qty[1] / 60
+            else:
+                km = qty[1]
+                minutes = km / s * 60 if s else 0
+            if s and minutes:
+                seg = {"minutes": round(minutes, 2), "speed": round(s, 2),
+                       "km": round(km, 3)}
+                if label:
+                    seg["speed_label"] = label
+                out.append(seg)
+            speed = qty = None
+
+        for m in _SPLIT_TOKEN.finditer(chunk):
+            if m.group("rlo"):
+                a, b = float(m.group("rlo")), float(m.group("rhi"))
+                # 라벨은 적은 표기 그대로 (9.0을 9로 뭉개지 않게)
+                speed = ((a + b) / 2, f"{m.group('rlo')}~{m.group('rhi')}")
+            elif m.group("time") is not None:
+                qty = ("time", float(m.group("time")))
+                if speed is None and wild is not None:
+                    speed, wild = (wild, None), None
+            elif m.group("speed") is not None:
+                speed = (float(m.group("speed")), None)
+            elif m.group("distkm") is not None:
+                qty = ("dist", float(m.group("distkm")))
+            elif m.group("distm") is not None:
+                qty = ("dist", float(m.group("distm")) / 1000)
+            else:  # 단위 없는 숫자
+                n = float(m.group("num"))
+                if qty is not None and speed is None:
+                    speed = (n, None)        # '2분 6.1' — 남은 숫자는 속도
+                elif speed is not None and qty is None:
+                    qty = ("time", n)        # '8.5km/h 5' — 남은 숫자는 분
+                elif wild is None:
+                    wild = n                 # '6.1 2분' — 다음 토큰이 정함
+                else:
+                    # 숫자 두 개뿐이면 v22 규칙대로 '분 속도' 순서로 가정
+                    speed, qty, wild = (n, None), ("time", wild), None
+            if speed is not None and qty is not None:
+                emit()
     return out
 
 
@@ -172,7 +215,8 @@ def splits_lines(splits):
         return []
     lines = ["🏃 구간 기록 (직접 입력 — 정확한 기록)"]
     for s in splits:
-        lines.append(f"{s['minutes']:g}분 @ {s['speed']:g} km/h "
+        label = s.get("speed_label") or f"{s['speed']:g}"
+        lines.append(f"{s['minutes']:g}분 @ {label} km/h "
                      f"· {s['km']:.2f} km")
     lines.append(f"합계: {splits_total_min(splits):g}분 · "
                  f"{splits_total_km(splits):.2f} km")
