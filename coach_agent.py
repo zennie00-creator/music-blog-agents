@@ -58,7 +58,9 @@ Whoop 개발자 API는 심박 시계열·구간별 스플릿·VO₂Max를 주지
 사용자가 직접 적어준 스플릿(예: 속도×시간)이나 거리·VO₂Max가 있으면 그걸 우선
 근거로 쓰고, 없는 세부는 추정하지 말고 '다음엔 이 값을 알려달라'고 짧게 요청하라.
 사용자가 직접 준 수치(거리·스플릿)는 정확한 것으로 신뢰하라. 사용자가 스스로
-'틀릴 수 있다'고 말하지 않는 한, '직접 입력이라 부정확하다'는 식으로 토를 달지 마라."""
+'틀릴 수 있다'고 말하지 않는 한, '직접 입력이라 부정확하다'는 식으로 토를 달지 마라.
+고도 상승 값은 Whoop 추정치라 부정확할 수 있다(특히 실내·트레드밀). 사용자가
+먼저 묻지 않는 한 고도를 분석하거나 언급하지 마라."""
 
 
 def _framework_block(framework):
@@ -184,13 +186,27 @@ def _goal_block(profile):
 
 def build_analysis_prompt(summary, profile=None, framework="", trend="",
                           coach_log="", user_note="", whoop_note="",
-                          insights=""):
-    """분석 프롬프트를 조립한다 (테스트·재사용을 위해 순수 함수로 분리)."""
+                          insights="", workout_date=""):
+    """분석 프롬프트를 조립한다 (테스트·재사용을 위해 순수 함수로 분리).
+
+    workout_date : 과거 날짜의 일지면 그 날짜(ISO). 요약엔 날짜가 없고 추세엔
+                   오늘까지 날짜가 붙어 있어서, 이걸 안 주면 코치가 "오늘 무슨
+                   운동을 했는지 모르겠다"며 헤맨다(실사용 관찰).
+    """
+    if (workout_date or "").strip():
+        when = f"""아래는 {workout_date}에 이 사람이 한 운동 기록입니다. (여러 운동일 수 있음)
+오늘의 기록이 아닙니다 — '오늘 뭘 했는지'를 궁금해하거나 추측하지 말고,
+{workout_date}의 세션으로 분석하세요. 추세에 그 이후 날짜가 보여도
+그 뒤 일들을 이 세션의 결과로 착각하지 마세요.
+
+[{workout_date} 운동 데이터]"""
+    else:
+        when = """아래는 오늘 이 사람이 한 운동 기록입니다. (여러 운동일 수 있음)
+
+[오늘 운동 데이터]"""
     return f"""{COACH_PERSONA}
 
-아래는 오늘(또는 지난 어느 날) 이 사람이 한 운동 기록입니다. (여러 운동일 수 있음)
-
-[오늘 운동 데이터]
+{when}
 {summary}
 
 {_DATA_CAVEAT}
@@ -209,14 +225,16 @@ def build_analysis_prompt(summary, profile=None, framework="", trend="",
 
 
 def analyze(summary, profile=None, framework="", trend="", coach_log="",
-            user_note="", whoop_note="", insights=""):
+            user_note="", whoop_note="", insights="", workout_date=""):
     """오늘 운동을 전문가 코치 관점으로 해석한다 (강한 모델).
 
-    insights : 다른 코치가 준 분석의 **원문** (format_insights). 훈련 노트가
-               증류 과정에서 잃은 뉘앙스를 코치가 직접 읽게 하는 통로다.
+    insights     : 다른 코치가 준 분석의 **원문** (format_insights). 훈련 노트가
+                   증류 과정에서 잃은 뉘앙스를 코치가 직접 읽게 하는 통로다.
+    workout_date : 과거 일지면 그 운동 날짜(ISO) — 코치가 '오늘'로 착각 안 하게.
     """
     prompt = build_analysis_prompt(summary, profile, framework, trend,
-                                    coach_log, user_note, whoop_note, insights)
+                                    coach_log, user_note, whoop_note, insights,
+                                    workout_date)
     # 상한을 낮게 둬 장황함에 제동을 건다(비용도 절약). 2~4문단엔 충분.
     return writer.generate(prompt, model=COACH_MODEL, max_tokens=1400)
 
