@@ -69,6 +69,18 @@ def _chosen_is_today():
     return all(d == today for d in dates) if dates else True
 
 
+def _analysis_date():
+    """코치에게 알려줄 운동 날짜. 오늘 일지면 빈 문자열(= 평소대로).
+
+    요약엔 날짜가 없고 추세엔 오늘까지 날짜가 붙어 있어서, 과거 일지를
+    날짜 없이 주면 코치가 '오늘 뭘 했는지 모르겠다'며 헤맨다(실사용 관찰).
+    """
+    if st.session_state.get("wk_is_today", True):
+        return ""
+    chosen = st.session_state.get("wk_selected_list") or []
+    return (chosen[0].get("local_iso_date") if chosen else "") or ""
+
+
 def _eff_recovery():
     """과거 날짜 운동엔 '오늘 아침 회복도'가 안 맞으므로 그때만 제외한다."""
     if st.session_state.get("wk_is_today", True):
@@ -268,7 +280,7 @@ def run():
                     if parsed:
                         st.caption(
                             f"✅ {len(parsed)}구간 · 합계 "
-                            f"{workout_agent.splits_total_min(parsed):g}분 · "
+                            f"{workout_agent.fmt_minutes(workout_agent.splits_total_min(parsed))} · "
                             f"{workout_agent.splits_total_km(parsed):.2f} km "
                             "— 거리를 자동 계산했어요")
                     else:
@@ -375,26 +387,44 @@ def run():
             st.markdown(zone_html, unsafe_allow_html=True)
         st.write("")
 
-        if not st.session_state.wk_analysis:
+        if not st.session_state.wk_analysis and not st.session_state.get("wk_analysis_err"):
             with st.spinner("코치가 최근 추세와 함께 오늘 운동을 분석하는 중..."):
                 # 데이터 수정 후 재분석해도 코치에게 답장한 내용은 계속 기억
-                st.session_state.wk_analysis = coach_agent.analyze(
-                    st.session_state.wk_summary, prof,
-                    framework=prof.get("coach_framework", ""),
-                    trend=st.session_state.get("wk_trend", ""),
-                    coach_log=st.session_state.get("wk_coach_log", ""),
-                    insights=st.session_state.get("wk_insights", ""),
-                    user_note=st.session_state.get("wk_coach_notes") or "",
-                    whoop_note=st.session_state.get("wk_whoop_note") or "")
+                try:
+                    st.session_state.wk_analysis = coach_agent.analyze(
+                        st.session_state.wk_summary, prof,
+                        framework=prof.get("coach_framework", ""),
+                        trend=st.session_state.get("wk_trend", ""),
+                        coach_log=st.session_state.get("wk_coach_log", ""),
+                        insights=st.session_state.get("wk_insights", ""),
+                        user_note=st.session_state.get("wk_coach_notes") or "",
+                        whoop_note=st.session_state.get("wk_whoop_note") or "",
+                        workout_date=_analysis_date())
+                except Exception as e:
+                    # 앱 전체가 죽으면 Streamlit이 메시지를 가려 원인을 못 본다
+                    # (크레딧 부족·프롬프트 한도 초과 모두 400으로 옴) — 잡아서 보여준다
+                    st.session_state.wk_analysis_err = str(e)
             st.rerun()
+
+        if st.session_state.get("wk_analysis_err"):
+            st.error("코치 분석 실패 — " + st.session_state.wk_analysis_err)
+            if st.button("🔁 분석 다시 시도"):
+                st.session_state.wk_analysis_err = ""
+                st.rerun()
+            st.stop()
 
         if not st.session_state.wk_blog:
             with st.spinner("운동 일지를 작성하는 중..."):
-                st.session_state.wk_blog = workout_agent.write_workout_blog(
-                    st.session_state.wk_summary, st.session_state.wk_analysis,
-                    st.session_state.wk_before, st.session_state.wk_body,
-                    st.session_state.wk_after, prof,
-                    n_workouts=len(st.session_state.wk_selected_list))
+                try:
+                    st.session_state.wk_blog = workout_agent.write_workout_blog(
+                        st.session_state.wk_summary, st.session_state.wk_analysis,
+                        st.session_state.wk_before, st.session_state.wk_body,
+                        st.session_state.wk_after, prof,
+                        n_workouts=len(st.session_state.wk_selected_list))
+                except Exception as e:
+                    st.error("일지 작성 실패 — " + str(e))
+                    if not st.button("🔁 일지 다시 시도"):
+                        st.stop()
             st.rerun()
 
         st.markdown('<div class="section-label">코치의 분석</div>', unsafe_allow_html=True)
@@ -415,18 +445,27 @@ def run():
             if st.button("📨 전달하고 분석 다시 받기",
                          disabled=not (coach_note.strip() or whoop_note.strip())):
                 if coach_note.strip():
+                    # 답장은 세션 내내 누적된다 — 상한 없이는 긴 대화가 프롬프트
+                    # 한도를 넘어 400으로 죽는다(실사용 크래시). 오래된 앞부분을
+                    # 버리고 최근 것만 유지한다. Whoop 붙여넣기도 같은 이유로 자름.
                     st.session_state.wk_coach_notes = (
-                        (st.session_state.get("wk_coach_notes") or "") + "\n" + coach_note).strip()
-                st.session_state.wk_whoop_note = whoop_note.strip()
+                        (st.session_state.get("wk_coach_notes") or "")
+                        + "\n" + coach_note).strip()[-3000:]
+                st.session_state.wk_whoop_note = whoop_note.strip()[:3000]
                 with st.spinner("코치가 답장을 반영해 다시 분석하는 중..."):
-                    st.session_state.wk_analysis = coach_agent.analyze(
-                        st.session_state.wk_summary, prof,
-                        framework=prof.get("coach_framework", ""),
-                        trend=st.session_state.get("wk_trend", ""),
-                        coach_log=st.session_state.get("wk_coach_log", ""),
-                        insights=st.session_state.get("wk_insights", ""),
-                        user_note=st.session_state.get("wk_coach_notes", ""),
-                        whoop_note=st.session_state.wk_whoop_note)
+                    try:
+                        st.session_state.wk_analysis = coach_agent.analyze(
+                            st.session_state.wk_summary, prof,
+                            framework=prof.get("coach_framework", ""),
+                            trend=st.session_state.get("wk_trend", ""),
+                            coach_log=st.session_state.get("wk_coach_log", ""),
+                            insights=st.session_state.get("wk_insights", ""),
+                            user_note=st.session_state.get("wk_coach_notes", ""),
+                            whoop_note=st.session_state.wk_whoop_note,
+                            workout_date=_analysis_date())
+                    except Exception as e:
+                        st.error("재분석 실패 — " + str(e))
+                        st.stop()
                 st.rerun()
             if ((st.session_state.get("wk_coach_notes") or st.session_state.get("wk_whoop_note"))
                     and st.session_state.wk_blog):
@@ -582,9 +621,8 @@ def _splits_sections_for_notion():
             continue
         heading = (f"{workout_agent.sport_emoji(w.get('sport'))} "
                    f"{w.get('sport','')} — 구간 기록")
-        lines = [f"{s['minutes']:g}분 @ {s['speed']:g} km/h · {s['km']:.2f} km"
-                 for s in sp]
-        lines.append(f"합계: {workout_agent.splits_total_min(sp):g}분 · "
+        lines = [workout_agent.split_line(s) for s in sp]
+        lines.append(f"합계: {workout_agent.fmt_minutes(workout_agent.splits_total_min(sp))} · "
                      f"{workout_agent.splits_total_km(sp):.2f} km")
         sections.append((heading, lines))
     return sections
@@ -796,7 +834,8 @@ def _reset():
               "wk_before", "wk_body", "wk_after", "wk_analysis", "wk_blog",
               "wk_saved_html", "wk_notion_url", "wk_blog_prev", "wk_trend",
               "wk_coach_notes", "wk_whoop_note", "wk_style_fb",
-              "wk_is_today", "wk_coach_log", "wk_insights", "wk_coachlog_saved"):
+              "wk_is_today", "wk_coach_log", "wk_insights", "wk_coachlog_saved",
+              "wk_analysis_err"):
         st.session_state.pop(k, None)
     # 체크박스 상태도 정리
     for k in [k for k in list(st.session_state.keys()) if k.startswith("pick_wk_")]:
