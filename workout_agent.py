@@ -167,6 +167,11 @@ def parse_splits(text):
                        "km": round(km, 3)}
                 if label:
                     seg["speed_label"] = label
+                if qty[0] == "dist":
+                    # 적은 방식대로 표기하려고 기억한다 — 워밍업은 시간으로,
+                    # 인터벌은 목표 거리로 달리는 게 실제 훈련 방식이라
+                    # 전부 '분 @ 속도'로 통일하면 어색하다(사용자 피드백).
+                    seg["by"] = "dist"
                 out.append(seg)
             speed = qty = None
 
@@ -209,16 +214,33 @@ def splits_total_min(splits):
     return round(sum(s["minutes"] for s in (splits or [])), 1)
 
 
+def fmt_minutes(minutes):
+    """소수점 분을 사람이 읽는 시간으로: 0.86분 → '52초', 2.4분 → '2분 24초'."""
+    total_sec = int(round(minutes * 60))
+    m, sec = divmod(total_sec, 60)
+    if m and sec:
+        return f"{m}분 {sec}초"
+    return f"{m}분" if m else f"{sec}초"
+
+
+def split_line(s):
+    """구간 한 줄 표기 — 적은 방식대로. 시간으로 달린 구간은 시간 먼저,
+    거리로 달린 구간(인터벌)은 거리 먼저. ('by' 없는 옛 기록은 시간 취급)"""
+    label = s.get("speed_label") or f"{s['speed']:g}"
+    if s.get("by") == "dist":
+        km = s["km"]
+        dist = f"{km * 1000:g}m" if km < 1 else f"{km:g}km"
+        return f"{dist} @ {label} km/h · {fmt_minutes(s['minutes'])}"
+    return f"{fmt_minutes(s['minutes'])} @ {label} km/h · {s['km']:.2f} km"
+
+
 def splits_lines(splits):
     """구간 기록을 요약·발행용 줄 목록으로."""
     if not splits:
         return []
     lines = ["🏃 구간 기록 (직접 입력 — 정확한 기록)"]
-    for s in splits:
-        label = s.get("speed_label") or f"{s['speed']:g}"
-        lines.append(f"{s['minutes']:g}분 @ {label} km/h "
-                     f"· {s['km']:.2f} km")
-    lines.append(f"합계: {splits_total_min(splits):g}분 · "
+    lines += [split_line(s) for s in splits]
+    lines.append(f"합계: {fmt_minutes(splits_total_min(splits))} · "
                  f"{splits_total_km(splits):.2f} km")
     return lines
 

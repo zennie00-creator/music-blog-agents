@@ -26,7 +26,7 @@ from core import draft
 APP_VERSION = "2026-08-05 · v23"
 MODE_VERSIONS = {
     "music":   "음악 v6 — 곡 선택·에세이 단계 진행",
-    "workout": "운동 v24.1 — 분석 크래시 방지·과거 일지 날짜 착각·고도 잡담 수정",
+    "workout": "운동 v24.2 — 크래시 방지·날짜 착각·고도·구간 표기(적은 방식대로)",
     "devlog":  "개발 v8 — 개발 메모 정리·이미지 발행",
     "invest":  "투자 v2 — 토론 기록 Notion 저장·복원 (세션 끊겨도 유지)",
 }

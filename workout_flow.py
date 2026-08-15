@@ -280,7 +280,7 @@ def run():
                     if parsed:
                         st.caption(
                             f"✅ {len(parsed)}구간 · 합계 "
-                            f"{workout_agent.splits_total_min(parsed):g}분 · "
+                            f"{workout_agent.fmt_minutes(workout_agent.splits_total_min(parsed))} · "
                             f"{workout_agent.splits_total_km(parsed):.2f} km "
                             "— 거리를 자동 계산했어요")
                     else:
@@ -621,9 +621,8 @@ def _splits_sections_for_notion():
             continue
         heading = (f"{workout_agent.sport_emoji(w.get('sport'))} "
                    f"{w.get('sport','')} — 구간 기록")
-        lines = [f"{s['minutes']:g}분 @ {s['speed']:g} km/h · {s['km']:.2f} km"
-                 for s in sp]
-        lines.append(f"합계: {workout_agent.splits_total_min(sp):g}분 · "
+        lines = [workout_agent.split_line(s) for s in sp]
+        lines.append(f"합계: {workout_agent.fmt_minutes(workout_agent.splits_total_min(sp))} · "
                      f"{workout_agent.splits_total_km(sp):.2f} km")
         sections.append((heading, lines))
     return sections
