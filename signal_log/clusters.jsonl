@@ -14,3 +14,4 @@
 {"date": "2026-08-15", "groups": {"down": ["gsheet/NASDAQ:MSTR", "gsheet/NYSE:JOBY", "gsheet/NASDAQ:COIN"]}}
 {"date": "2026-08-18", "groups": {"up": ["gsheet/NASDAQ:COIN", "gsheet/NASDAQ:IBIT", "gsheet/NASDAQ:MSTR"]}}
 {"date": "2026-08-19", "groups": {"down": ["gsheet/NYSE:COHR", "gsheet/NASDAQ:SKHY", "gsheet/NASDAQ:MU", "gsheet/NASDAQ:KLAC", "gsheet/NASDAQ:MSTR", "gsheet/NASDAQ:LRCX", "gsheet/NASDAQ:ASML", "gsheet/NASDAQ:AMAT", "gsheet/NYSE:JOBY", "gsheet/NASDAQ:COIN", "gsheet/NASDAQ:NVDA"]}}
+{"date": "2026-08-20", "groups": {"down": ["naver/000660", "gsheet/NASDAQ:LRCX", "gsheet/NYSE:COHR", "gsheet/NASDAQ:KLAC", "gsheet/NASDAQ:AMAT", "gsheet/NASDAQ:ASML"], "up": ["gsheet/NASDAQ:AAPL", "gsheet/NASDAQ:IBIT", "gsheet/NASDAQ:COIN", "gsheet/NASDAQ:MSTR"]}}
